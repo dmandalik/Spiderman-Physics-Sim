@@ -7,8 +7,8 @@
 
 import { vec } from '../physics/vec.js';
 
-const BASE_ZOOM = 7.5; // pixels per metre at rest
-const MIN_ZOOM = 3.6;
+const BASE_ZOOM = 9.5; // pixels per metre at rest
+const MIN_ZOOM = 4.6;
 const LOOKAHEAD = 0.45; // seconds of velocity to lead by
 const FOLLOW_RATE = 3.2; // higher snaps harder to the target
 

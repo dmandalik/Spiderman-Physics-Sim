@@ -3,10 +3,12 @@
 import { worldToScreen } from './camera.js';
 import { drawCity } from './city.js';
 import { drawSky } from './sky.js';
+import { createHeroPainter } from './hero.js';
 
-const WEB = 'rgba(226, 236, 255, 0.9)';
-const HERO = '#ff3352';
+const WEB = 'rgba(232, 240, 255, 0.92)';
 const ANCHOR = '#4de2ff';
+
+const paintHero = createHeroPainter();
 const LAMP_SPACING = 34; // metres between street lights
 
 export function drawScene(ctx, world, camera, view) {
@@ -17,10 +19,19 @@ export function drawScene(ctx, world, camera, view) {
   drawStreet(ctx, camera, world.ground, width, height);
   drawTrail(ctx, camera, view.trail);
 
-  if (world.web.attached) drawWeb(ctx, camera, view.heroPos, world.web);
+  const pose = paintHero.pose({
+    pos: view.heroPos,
+    vel: world.hero.vel,
+    web: world.web,
+    time: world.time,
+    dt: view.dt,
+  });
+
+  // Anchored at the hand, not at the centre of mass.
+  if (world.web.attached) drawWeb(ctx, camera, pose.webArm[2], world.web);
   if (view.aimAnchor) drawAimAnchor(ctx, camera, view.heroPos, view.aimAnchor);
 
-  drawHero(ctx, camera, view.heroPos, world.hero.radius);
+  paintHero.draw(ctx, camera, pose);
 }
 
 function drawStreet(ctx, camera, ground, width, height) {
@@ -93,15 +104,26 @@ function drawTrail(ctx, camera, trail) {
   }
 }
 
-function drawWeb(ctx, camera, heroPos, web) {
+// A web under tension is a straight line. A slack one hangs, and how far it
+// hangs is exactly how much longer the web is than the gap it spans, so the
+// curve is reading the same number the solver is.
+function drawWeb(ctx, camera, handPos, web) {
   const anchor = worldToScreen(camera, web.anchor);
-  const hero = worldToScreen(camera, heroPos);
+  const hero = worldToScreen(camera, handPos);
+
+  const span = Math.hypot(handPos.x - web.anchor.x, handPos.y - web.anchor.y);
+  const slack = Math.max(web.restLength - span, 0);
+  const sag = Math.min(slack * 0.45, web.restLength * 0.35) * camera.zoom;
 
   ctx.strokeStyle = WEB;
-  ctx.lineWidth = 1.6;
+  ctx.lineWidth = 1.7;
   ctx.beginPath();
   ctx.moveTo(anchor.x, anchor.y);
-  ctx.lineTo(hero.x, hero.y);
+  if (sag > 1) {
+    ctx.quadraticCurveTo((anchor.x + hero.x) / 2, (anchor.y + hero.y) / 2 + sag, hero.x, hero.y);
+  } else {
+    ctx.lineTo(hero.x, hero.y);
+  }
   ctx.stroke();
 
   ctx.fillStyle = ANCHOR;
@@ -133,20 +155,3 @@ function drawAimAnchor(ctx, camera, heroPos, anchor) {
   ctx.stroke();
 }
 
-function drawHero(ctx, camera, pos, radius) {
-  const p = worldToScreen(camera, pos);
-  const r = Math.max(radius * camera.zoom, 4);
-
-  const glow = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r * 5);
-  glow.addColorStop(0, 'rgba(255, 51, 82, 0.5)');
-  glow.addColorStop(1, 'rgba(255, 51, 82, 0)');
-  ctx.fillStyle = glow;
-  ctx.beginPath();
-  ctx.arc(p.x, p.y, r * 5, 0, Math.PI * 2);
-  ctx.fill();
-
-  ctx.fillStyle = HERO;
-  ctx.beginPath();
-  ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
-  ctx.fill();
-}

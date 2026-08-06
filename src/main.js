@@ -122,13 +122,15 @@ function frame(now) {
   // last two states. Without this a 60 Hz display shows a 240 Hz simulation
   // stepping in visible jumps.
   const heroPos = lerp(world.hero.prevPos, world.hero.pos, alpha);
+  const dt = Math.min(frameTime, 0.1);
 
-  updateCamera(camera, world.hero, Math.min(frameTime, 0.1), world.ground);
+  updateCamera(camera, world.hero, dt, world.ground);
 
   drawScene(ctx, world, camera, {
     city,
     heroPos,
     trail,
+    dt,
     aimAnchor: world.web.attached ? null : aimedAnchor(),
   });
 

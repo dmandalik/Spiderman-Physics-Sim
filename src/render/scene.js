@@ -1,80 +1,76 @@
 // Draws the world. Reads state, never changes it.
-//
-// Placeholder art for now. The city goes in next phase and the real character
-// after that, so this is deliberately just enough to see the physics working.
 
 import { worldToScreen } from './camera.js';
+import { drawCity } from './city.js';
+import { drawSky } from './sky.js';
 
-const SKY_TOP = '#060915';
-const SKY_BOTTOM = '#131f3f';
-const GRID = 'rgba(120, 165, 255, 0.055)';
 const WEB = 'rgba(226, 236, 255, 0.9)';
 const HERO = '#ff3352';
 const ANCHOR = '#4de2ff';
+const LAMP_SPACING = 34; // metres between street lights
 
 export function drawScene(ctx, world, camera, view) {
   const { width, height } = camera;
 
-  drawSky(ctx, width, height);
-  drawGrid(ctx, camera, world.ground);
-  drawGround(ctx, camera, world.ground, width, height);
+  drawSky(ctx, camera);
+  drawCity(ctx, view.city, camera, world.ground);
+  drawStreet(ctx, camera, world.ground, width, height);
   drawTrail(ctx, camera, view.trail);
 
   if (world.web.attached) drawWeb(ctx, camera, view.heroPos, world.web);
-  if (view.aim) drawAim(ctx, camera, view.heroPos, view.aim, view.aimInRange);
+  if (view.aimAnchor) drawAimAnchor(ctx, camera, view.heroPos, view.aimAnchor);
 
   drawHero(ctx, camera, view.heroPos, world.hero.radius);
 }
 
-function drawSky(ctx, width, height) {
-  const sky = ctx.createLinearGradient(0, 0, 0, height);
-  sky.addColorStop(0, SKY_TOP);
-  sky.addColorStop(1, SKY_BOTTOM);
-  ctx.fillStyle = sky;
-  ctx.fillRect(0, 0, width, height);
-}
-
-// World aligned grid, so movement is readable even with nothing else on screen.
-// Spacing grows with distance so the lines stay a similar size as we zoom out.
-function drawGrid(ctx, camera, ground) {
-  const spacing = camera.zoom < 5 ? 40 : 20;
-  const halfW = camera.width / 2 / camera.zoom;
-  const halfH = camera.height / 2 / camera.zoom;
-
-  ctx.strokeStyle = GRID;
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-
-  const startX = Math.floor((camera.pos.x - halfW) / spacing) * spacing;
-  for (let x = startX; x < camera.pos.x + halfW; x += spacing) {
-    const p = worldToScreen(camera, { x, y: 0 });
-    ctx.moveTo(p.x, 0);
-    ctx.lineTo(p.x, camera.height);
-  }
-
-  const startY = Math.max(Math.floor((camera.pos.y - halfH) / spacing) * spacing, ground);
-  for (let y = startY; y < camera.pos.y + halfH; y += spacing) {
-    const p = worldToScreen(camera, { x: 0, y });
-    ctx.moveTo(0, p.y);
-    ctx.lineTo(camera.width, p.y);
-  }
-
-  ctx.stroke();
-}
-
-function drawGround(ctx, camera, ground, width, height) {
+function drawStreet(ctx, camera, ground, width, height) {
   const y = worldToScreen(camera, { x: 0, y: ground }).y;
   if (y > height) return;
 
-  ctx.fillStyle = '#03050c';
+  // Sodium light bouncing off the haze at street level. Cheap, and it stops
+  // the bottom of the frame reading as a flat black bar.
+  const glow = ctx.createLinearGradient(0, y - camera.zoom * 26, 0, y);
+  glow.addColorStop(0, 'rgba(255, 176, 102, 0)');
+  glow.addColorStop(1, 'rgba(255, 176, 102, 0.09)');
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, y - camera.zoom * 26, width, camera.zoom * 26);
+
+  ctx.fillStyle = '#02040a';
   ctx.fillRect(0, y, width, height - y);
 
-  ctx.strokeStyle = 'rgba(77, 226, 255, 0.5)';
-  ctx.lineWidth = 2;
+  ctx.strokeStyle = 'rgba(77, 226, 255, 0.35)';
+  ctx.lineWidth = 1.5;
   ctx.beginPath();
   ctx.moveTo(0, y);
   ctx.lineTo(width, y);
   ctx.stroke();
+
+  drawLamps(ctx, camera, ground, y);
+}
+
+// Evenly spaced pools of light along the street. Snapping to a world aligned
+// grid means they slide past at the right speed instead of being painted on
+// the screen and following the camera.
+function drawLamps(ctx, camera, ground, streetY) {
+  const half = camera.width / 2 / camera.zoom;
+  const first = Math.floor((camera.pos.x - half) / LAMP_SPACING) * LAMP_SPACING;
+
+  ctx.fillStyle = 'rgba(255, 208, 140, 0.5)';
+  for (let x = first; x < camera.pos.x + half; x += LAMP_SPACING) {
+    const p = worldToScreen(camera, { x, y: ground + 6 });
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, Math.max(camera.zoom * 0.35, 1), 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = 'rgba(255, 190, 120, 0.06)';
+    ctx.beginPath();
+    ctx.moveTo(p.x, p.y);
+    ctx.lineTo(p.x - camera.zoom * 4, streetY);
+    ctx.lineTo(p.x + camera.zoom * 4, streetY);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255, 208, 140, 0.5)';
+  }
 }
 
 // Older points are both fainter and thinner, which reads as speed without
@@ -114,20 +110,27 @@ function drawWeb(ctx, camera, heroPos, web) {
   ctx.fill();
 }
 
-// Dashed line to wherever the pointer is, red once it is out of web range.
-function drawAim(ctx, camera, heroPos, aim, inRange) {
+// Shows which anchor a web would actually grab, since aiming snaps to the
+// nearest reachable one rather than sticking wherever the cursor sits.
+function drawAimAnchor(ctx, camera, heroPos, anchor) {
   const from = worldToScreen(camera, heroPos);
-  const to = worldToScreen(camera, aim);
+  const to = worldToScreen(camera, anchor);
 
   ctx.save();
-  ctx.setLineDash([6, 8]);
-  ctx.strokeStyle = inRange ? 'rgba(77, 226, 255, 0.45)' : 'rgba(255, 80, 80, 0.3)';
-  ctx.lineWidth = 1.2;
+  ctx.setLineDash([5, 7]);
+  ctx.strokeStyle = 'rgba(77, 226, 255, 0.4)';
+  ctx.lineWidth = 1.1;
   ctx.beginPath();
   ctx.moveTo(from.x, from.y);
   ctx.lineTo(to.x, to.y);
   ctx.stroke();
   ctx.restore();
+
+  ctx.strokeStyle = ANCHOR;
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  ctx.arc(to.x, to.y, 7, 0, Math.PI * 2);
+  ctx.stroke();
 }
 
 function drawHero(ctx, camera, pos, radius) {

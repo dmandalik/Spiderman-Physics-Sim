@@ -27,7 +27,7 @@ export function updateCamera(camera, hero, dt, ground = 0) {
 
   // Stop the view dropping below the ground and showing empty space.
   const halfHeight = camera.height / 2 / camera.zoom;
-  targetY = Math.max(targetY, ground + halfHeight * 0.55);
+  targetY = Math.max(targetY, ground + halfHeight * 0.72);
 
   // Frame rate independent smoothing. A plain lerp by a constant would chase
   // faster on a 240 Hz display than on a 60 Hz one.
@@ -38,6 +38,23 @@ export function updateCamera(camera, hero, dt, ground = 0) {
     camera.pos.y + (targetY - camera.pos.y) * t,
   );
   camera.zoom += (wanted - camera.zoom) * (1 - Math.exp(-2 * dt));
+}
+
+// A view of the same scene for a background layer. Distant layers move a
+// fraction of the real camera, both sideways and vertically, which is what
+// makes them read as far away. Vertical parallax is measured from the ground
+// rather than from zero so the street line stays put across every layer while
+// the skyline still slides as he climbs.
+export function layerCamera(camera, depth, ground = 0) {
+  return {
+    pos: {
+      x: camera.pos.x * depth,
+      y: ground + (camera.pos.y - ground) * depth,
+    },
+    zoom: camera.zoom,
+    width: camera.width,
+    height: camera.height,
+  };
 }
 
 export function worldToScreen(camera, point) {

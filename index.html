@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Spider Swing</title>
+    <link rel="stylesheet" href="src/style.css" />
+  </head>
+  <body>
+    <canvas id="stage"></canvas>
+
+    <header class="title">
+      <h1>Spider Swing</h1>
+      <p>A pendulum that happens to wear a mask</p>
+    </header>
+
+    <section id="hud" class="hud">
+      <div class="stat"><span class="label">Speed</span><span class="value" data-field="speed">0</span><span class="unit">m/s</span></div>
+      <div class="stat"><span class="label">Height</span><span class="value" data-field="height">0</span><span class="unit">m</span></div>
+      <div class="stat"><span class="label">Web load</span><span class="value" data-field="gforce">0</span><span class="unit">g</span></div>
+      <div class="stat"><span class="label">Energy</span><span class="value" data-field="energy">0</span><span class="unit">kJ</span></div>
+      <div class="stat"><span class="label">Web</span><span class="value" data-field="web">free</span><span class="unit"></span></div>
+      <div class="stat quiet"><span class="label">FPS</span><span class="value" data-field="fps">60</span><span class="unit"></span></div>
+    </section>
+
+    <footer class="hints">
+      <span><kbd>Hold click</kbd> shoot a web</span>
+      <span><kbd>W</kbd> <kbd>S</kbd> reel in and out</span>
+      <span><kbd>Space</kbd> toggle web</span>
+      <span><kbd>R</kbd> reset</span>
+    </footer>
+
+    <script type="module" src="src/main.js"></script>
+  </body>
+</html>

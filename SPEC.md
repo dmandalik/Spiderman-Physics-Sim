@@ -72,8 +72,10 @@ Each phase ends with something runnable, tests passing, and its own commits.
 1. **Physics core.** Repo, canvas, fixed timestep loop, vector math, free
    flight, rigid constraint, click to shoot a web and swing. Tests for free
    fall, constraint, energy conservation, slack webs, determinism.
-2. **City and camera.** Seeded procedural buildings, parallax layers, follow
-   camera with lookahead and zoom, anchor points on rooftops and edges.
+2. **City and camera.** Seeded procedural buildings in chunks, parallax layers,
+   follow camera with lookahead and zoom, rooftop anchors. Buildings are
+   scenery, not obstacles. He swings past them, and the only thing they add to
+   the physics is somewhere for a web to stick.
 3. **Character and web art.** Procedural pose with arm IK, velocity aligned
    body, leg tuck, sagging web line, speed trails.
 4. **Control panel.** Slider UI, elastic mode, reeling, presets, time scale.

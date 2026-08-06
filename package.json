@@ -1,0 +1,14 @@
+{
+  "name": "spider-swing",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A physics sandbox where Spider-Man swings through a procedural city",
+  "scripts": {
+    "test": "node --test",
+    "serve": "python3 -m http.server 8000"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -49,6 +49,28 @@ on your display refresh rate, and the renderer interpolates between the last
 two states. Everything under `src/physics` is pure and knows nothing about
 pixels, which is what makes it testable.
 
+## The character
+
+Nothing about the pose is keyframed. There are no sprites and no animation
+frames. Every joint is solved from the physics state each frame.
+
+The arm holding the web is real two bone inverse kinematics. Given a shoulder
+and an anchor there are only two elbow positions that let both bones reach, and
+the solver picks one. If the anchor is further away than the arm is long the arm
+straightens and points at it, which is the right answer rather than a failure.
+The web is then drawn from the anchor to the hand, not to his centre of mass.
+
+The body lines up with the web while he is hanging, because that is where the
+pull is, and swings round to point along his velocity once he lets go, which is
+what turns a fall into a dive. The legs tuck as he speeds up and trail against
+the direction he is moving. The web line hangs in a curve when slack and snaps
+straight under tension, and how far it hangs is exactly how much longer the web
+is than the gap it spans, so the curve is reading the same number the solver is.
+
+One honest cheat: he is drawn about three times life size. A 1.8 metre figure
+against a 120 metre tower is a speck at any zoom that still frames the city.
+The physics never sees that number, only the renderer does.
+
 ## The city
 
 The city is endless and never stored, only derived. It is cut into 260 metre
@@ -71,10 +93,11 @@ npm test
 Covers free fall against the closed form solution, rope length under load,
 slack webs doing nothing, tension at rest equalling one body weight, energy
 conservation without drag, energy loss with drag, reeling adding energy,
-determinism, aim always picking the best reachable anchor, and the city
-generating the same way no matter which direction you arrive from.
+determinism, aim always picking the best reachable anchor, the city generating
+the same way no matter which direction you arrive from, and the IK solver
+landing the hand on its target without ever stretching a bone.
 
 ## Status
 
-Phase 2 of 7. Physics core and the city. The character art, the control panel,
-the instrument readouts and the autopilot come next. See [SPEC.md](SPEC.md).
+Phase 3 of 7. Physics core, the city and the character. The control panel, the
+instrument readouts and the autopilot come next. See [SPEC.md](SPEC.md).

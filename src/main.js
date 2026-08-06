@@ -4,6 +4,7 @@
 import { createWorld, step, attachWeb, releaseWeb, reelWeb } from './physics/world.js';
 import { lerp } from './physics/vec.js';
 import { createStepper } from './loop.js';
+import { createCity, pickAnchor } from './world/city.js';
 import { createCamera, updateCamera, screenToWorld } from './render/camera.js';
 import { drawScene } from './render/scene.js';
 import { createHud } from './ui/hud.js';
@@ -14,7 +15,11 @@ const TRAIL_INTERVAL = 0.02; // seconds between samples
 const canvas = document.getElementById('stage');
 const ctx = canvas.getContext('2d');
 
+// ?seed=123 gives a different city. Same seed, same skyline, every time.
+const seed = Number(new URLSearchParams(location.search).get('seed')) || undefined;
+
 const world = createWorld();
+const city = createCity(seed);
 const camera = createCamera();
 const advance = createStepper();
 const updateHud = createHud(document.getElementById('hud'));
@@ -27,8 +32,8 @@ let lastFrame = performance.now();
 
 function resize() {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  camera.width = canvas.clientWidth;
-  camera.height = canvas.clientHeight;
+  camera.width = canvas.clientWidth || window.innerWidth;
+  camera.height = canvas.clientHeight || window.innerHeight;
   canvas.width = Math.round(camera.width * dpr);
   canvas.height = Math.round(camera.height * dpr);
   // Draw in CSS pixels and let the transform handle the device scaling, so
@@ -40,9 +45,17 @@ function pointerWorld() {
   return pointer ? screenToWorld(camera, pointer) : null;
 }
 
-function shootWeb() {
+// Webs stick to buildings, not to the sky, so the cursor only chooses which
+// reachable anchor to aim at.
+function aimedAnchor() {
   const target = pointerWorld();
-  if (target) attachWeb(world, target);
+  if (!target) return null;
+  return pickAnchor(city, world.hero.pos, target, world.params.maxWebRange, world.ground);
+}
+
+function shootWeb() {
+  const anchor = aimedAnchor();
+  if (anchor) attachWeb(world, anchor);
 }
 
 canvas.addEventListener('pointermove', (e) => {
@@ -75,7 +88,9 @@ window.addEventListener('keyup', (e) => {
   if (releasing) reelDirection = 0;
 });
 
-window.addEventListener('resize', resize);
+// Watching the canvas itself rather than the window catches every case, from
+// a browser resize to a phone rotating to the pane it lives in changing size.
+new ResizeObserver(resize).observe(canvas);
 
 function reset() {
   const fresh = createWorld(world.params);
@@ -110,14 +125,11 @@ function frame(now) {
 
   updateCamera(camera, world.hero, Math.min(frameTime, 0.1), world.ground);
 
-  const aim = pointerWorld();
   drawScene(ctx, world, camera, {
+    city,
     heroPos,
     trail,
-    aim,
-    aimInRange: aim
-      ? Math.hypot(aim.x - heroPos.x, aim.y - heroPos.y) <= world.params.maxWebRange
-      : false,
+    aimAnchor: world.web.attached ? null : aimedAnchor(),
   });
 
   updateHud(world, frameTime);

@@ -22,10 +22,12 @@ export const DEFAULT_PARAMS = {
 };
 
 export function createWorld(params = {}) {
-  const start = vec(0, 70);
+  // Down among the rooftops rather than above them. Start any higher and there
+  // is nothing overhead to web on to, since a web can only pull you up.
+  const start = vec(0, 88);
   return {
     params: { ...DEFAULT_PARAMS, ...params },
-    hero: { pos: start, prevPos: start, vel: vec(22, 0), radius: 0.9 },
+    hero: { pos: start, prevPos: start, vel: vec(26, 0), radius: 0.9 },
     web: { attached: false, anchor: vec(0, 0), restLength: 0 },
     ground: 0,
     tension: 0, // newtons, recomputed every step for the HUD and the renderer

@@ -31,7 +31,13 @@ export function drawScene(ctx, world, camera, view) {
   if (world.web.attached) drawWeb(ctx, camera, pose.webArm[2], world.web);
   if (view.aimAnchor) drawAimAnchor(ctx, camera, view.heroPos, view.aimAnchor);
 
-  paintHero.draw(ctx, camera, pose);
+  // The character normally lives on the WebGL layer above this one. The flat
+  // painter stays as the fallback for anything that cannot give us a context.
+  if (view.flat) {
+    paintHero.draw(ctx, camera, pose, Math.hypot(world.hero.vel.x, world.hero.vel.y));
+  }
+
+  return pose;
 }
 
 function drawStreet(ctx, camera, ground, width, height) {
@@ -95,8 +101,10 @@ function drawTrail(ctx, camera, trail) {
     const a = worldToScreen(camera, trail[i - 1]);
     const b = worldToScreen(camera, trail[i]);
 
-    ctx.strokeStyle = `rgba(255, 78, 106, ${t * 0.5})`;
-    ctx.lineWidth = t * 5;
+    // Faint on purpose. Now that there is a real figure to look at, a bold
+    // streak through his chest reads as a mistake rather than as speed.
+    ctx.strokeStyle = `rgba(255, 96, 120, ${t * t * 0.16})`;
+    ctx.lineWidth = t * 2.4;
     ctx.beginPath();
     ctx.moveTo(a.x, a.y);
     ctx.lineTo(b.x, b.y);

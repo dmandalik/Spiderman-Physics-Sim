@@ -8,12 +8,29 @@ import { createCity, pickAnchor } from './world/city.js';
 import { createCamera, updateCamera, screenToWorld } from './render/camera.js';
 import { drawScene } from './render/scene.js';
 import { createHud } from './ui/hud.js';
+import { createStage } from './render/three/stage.js';
+import { createMannequin } from './render/three/mannequin.js';
 
 const TRAIL_LENGTH = 48;
 const TRAIL_INTERVAL = 0.02; // seconds between samples
 
 const canvas = document.getElementById('stage');
 const ctx = canvas.getContext('2d');
+
+// If WebGL is unavailable the flat painter takes over, so the page still runs
+// rather than showing a city with nobody in it.
+const stage = tryStage();
+const mannequin = stage && createMannequin();
+if (stage) stage.scene.add(mannequin.object);
+
+function tryStage() {
+  try {
+    return createStage(document.getElementById('stage3d'));
+  } catch (error) {
+    console.warn('no webgl, falling back to the flat character', error);
+    return null;
+  }
+}
 
 // ?seed=123 gives a different city. Same seed, same skyline, every time.
 const seed = Number(new URLSearchParams(location.search).get('seed')) || undefined;
@@ -39,6 +56,7 @@ function resize() {
   // Draw in CSS pixels and let the transform handle the device scaling, so
   // every other file can ignore retina displays entirely.
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if (stage) stage.resize(camera.width, camera.height, dpr);
 }
 
 function pointerWorld() {
@@ -126,13 +144,20 @@ function frame(now) {
 
   updateCamera(camera, world.hero, dt, world.ground);
 
-  drawScene(ctx, world, camera, {
+  const pose = drawScene(ctx, world, camera, {
+    flat: !stage,
     city,
     heroPos,
     trail,
     dt,
     aimAnchor: world.web.attached ? null : aimedAnchor(),
   });
+
+  if (stage) {
+    mannequin.apply(pose);
+    stage.sync(camera);
+    stage.render();
+  }
 
   updateHud(world, frameTime);
   requestAnimationFrame(frame);

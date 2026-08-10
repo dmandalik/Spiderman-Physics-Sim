@@ -9,7 +9,7 @@ import { createCamera, updateCamera, screenToWorld } from './render/camera.js';
 import { drawScene } from './render/scene.js';
 import { createHud } from './ui/hud.js';
 import { createStage } from './render/three/stage.js';
-import { createMannequin } from './render/three/mannequin.js';
+import { createCharacter } from './render/three/character.js';
 
 const TRAIL_LENGTH = 48;
 const TRAIL_INTERVAL = 0.02; // seconds between samples
@@ -20,8 +20,16 @@ const ctx = canvas.getContext('2d');
 // If WebGL is unavailable the flat painter takes over, so the page still runs
 // rather than showing a city with nobody in it.
 const stage = tryStage();
-const mannequin = stage && createMannequin();
-if (stage) stage.scene.add(mannequin.object);
+
+// Starts as the mannequin and swaps itself for the rigged mesh the moment one
+// finishes loading, so the page is never waiting on an asset to be playable.
+let character = null;
+if (stage) {
+  createCharacter().then((loaded) => {
+    character = loaded;
+    stage.scene.add(character.object);
+  });
+}
 
 function tryStage() {
   try {
@@ -153,8 +161,8 @@ function frame(now) {
     aimAnchor: world.web.attached ? null : aimedAnchor(),
   });
 
-  if (stage) {
-    mannequin.apply(pose);
+  if (stage && character) {
+    character.apply(pose, dt);
     stage.sync(camera);
     stage.render();
   }

@@ -162,7 +162,7 @@ function frame(now) {
   });
 
   if (stage && character) {
-    character.apply(pose, dt);
+    character.apply(pose, dt, world.hero.vel);
     stage.sync(camera);
     stage.render();
   }

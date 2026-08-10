@@ -64,6 +64,41 @@ const RESPONSE = {
   rightFoot: 11,
 };
 
+// How far each bone gets swept back against the direction of travel, as a
+// fraction of its aim. Plain lag is symmetric and only ever arrives late; this
+// is what actually makes a limb stream behind him. Extremities catch the most
+// air, which is why the numbers grow toward the ends of every chain.
+//
+// The right arm is deliberately zero. That is the web arm, and dragging it off
+// target would break the one thing worth protecting, which is that the hand
+// genuinely holds the web rather than approximately holds it.
+const DRAG = {
+  hips: 0,
+  spine: 0.04,
+  chest: 0.05,
+  neck: 0.13,
+  leftShoulder: 0.09,
+  rightShoulder: 0,
+  leftArm: 0.16,
+  rightArm: 0,
+  leftForearm: 0.3,
+  rightForearm: 0,
+  leftThigh: 0.14,
+  rightThigh: 0.17,
+  leftShin: 0.3,
+  rightShin: 0.34,
+  leftFoot: 0.42,
+  rightFoot: 0.46,
+};
+
+// Speed at which the sweep reaches full strength.
+const DRAG_FULL_SPEED = 30; // m/s
+
+// The model's own clip runs underneath the solver at a fraction of speed. It
+// only ever reaches bones the IK does not claim, which is fingers, the lower
+// spine and the head, so it adds detail without ever fighting the physics.
+const SECONDARY_RATE = 0.45;
+
 // Bones worth driving if they exist, but not worth refusing a model over.
 const OPTIONAL = new Set(['leftShoulder', 'rightShoulder']);
 
@@ -89,7 +124,7 @@ export async function createCharacter(url = 'assets/hero.glb') {
     return mannequin;
   }
 
-  return skinned(gltf.scene, bones);
+  return skinned(gltf.scene, bones, gltf.animations || []);
 }
 
 function findBones(scene) {
@@ -133,7 +168,13 @@ function listBones(scene) {
 // Drives the skeleton by aiming each bone down the line between the two joints
 // the rig already solved. The rest direction is taken from the bind pose, so
 // this works without knowing which axis the exporter treated as "down the bone".
-function skinned(scene, bones) {
+// Picks the clip most likely to look like swinging, since the useful one is
+// rarely first and is named differently in every export.
+function pickClip(clips) {
+  return clips.find((clip) => /swing|air|fall|jump/i.test(clip.name)) || clips[0] || null;
+}
+
+function skinned(scene, bones, clips) {
   const root = new THREE.Group();
   root.add(scene);
 
@@ -178,6 +219,7 @@ function skinned(scene, bones) {
       // pose rather than snapping from it.
       smoothed: restDir.clone(),
       rate: RESPONSE[key] ?? 18,
+      drag: DRAG[key] ?? 0,
     });
   }
 
@@ -189,6 +231,17 @@ function skinned(scene, bones) {
   // upper, lower, tip, then the clavicle that carries the chain, if there is
   // one. Arms are listed free side first to match the order the rig hands them
   // over in, so the web arm always lands on the side nearest the camera.
+  // The clip is stripped down to rotation only. Its position tracks would drive
+  // the hips, which would fight the root placement and walk him off his own
+  // centre of mass.
+  let mixer = null;
+  const clip = pickClip(clips);
+  if (clip) {
+    clip.tracks = clip.tracks.filter((track) => track.name.endsWith('.quaternion'));
+    mixer = new THREE.AnimationMixer(scene);
+    mixer.clipAction(clip).play();
+  }
+
   const chains = [
     ['leftArm', 'leftForearm', null, 'leftShoulder'],
     ['rightArm', 'rightForearm', null, 'rightShoulder'],
@@ -200,12 +253,13 @@ function skinned(scene, bones) {
   const swing = new THREE.Quaternion();
   const parent = new THREE.Quaternion();
   const target = new THREE.Vector3();
+  const drift = new THREE.Vector3();
 
   // Swing a bone from where it rests onto the line between the two joints the
   // rig solved, keeping its bind twist. Setting the world orientation rather
   // than a local one means a bone never inherits its parent's error, so aiming
   // the hips does not drag the legs off target.
-  function aim(key, from, to, dt) {
+  function aim(key, from, to, dt, flow) {
     const bone = bones[key];
     const state = setup.get(key);
     if (!bone || !state) return;
@@ -213,6 +267,15 @@ function skinned(scene, bones) {
     target.set(to.x - from.x, to.y - from.y, 0);
     if (target.lengthSq() < 1e-10) return;
     target.normalize();
+
+    // Sweep the aim back against the direction of travel. Lag alone makes a
+    // limb arrive late wherever it is going; this makes it stream behind him,
+    // which is the part that actually looks like moving through air.
+    if (flow && state.drag) {
+      target.addScaledVector(flow, -state.drag);
+      if (target.lengthSq() < 1e-10) return;
+      target.normalize();
+    }
 
     // Each bone chases its target at its own rate, so the hips arrive first and
     // the extremities trail. Frame rate independent, so the follow through is
@@ -233,17 +296,32 @@ function skinned(scene, bones) {
   return {
     object: root,
 
-    apply(pose, dt = 1 / 60) {
+    apply(pose, dt = 1 / 60, velocity = null) {
       const step = Math.min(Math.max(dt, 1 / 1000), 1 / 15);
       const [pelvis, waist, chest, neck] = pose.spine;
 
+      // The clip runs first so the IK lands on top of it and wins every bone it
+      // cares about, leaving the clip the fingers, lower spine and head.
+      if (mixer) mixer.update(step * SECONDARY_RATE);
+
       root.position.set(pelvis.x - hipsOffset.x, pelvis.y - hipsOffset.y, -hipsOffset.z);
 
+      // Direction of travel, faded in with speed so a slow hang has no sweep at
+      // all and a fast swing has all of it.
+      let flow = null;
+      if (velocity) {
+        const speed = Math.hypot(velocity.x, velocity.y);
+        if (speed > 1) {
+          const strength = Math.min(speed / DRAG_FULL_SPEED, 1);
+          flow = drift.set(velocity.x / speed, velocity.y / speed, 0).multiplyScalar(strength);
+        }
+      }
+
       // Strictly top down. Every aim depends on its parent already being right.
-      aim('hips', pelvis, waist, step);
-      aim('spine', waist, chest, step);
-      aim('chest', chest, neck, step);
-      aim('neck', neck, pose.head, step);
+      aim('hips', pelvis, waist, step, flow);
+      aim('spine', waist, chest, step, flow);
+      aim('chest', chest, neck, step, flow);
+      aim('neck', neck, pose.head, step, flow);
 
       const limbs = [pose.freeArm, pose.webArm, pose.legs[0], pose.legs[1]];
       for (const [index, chain] of chains.entries()) {
@@ -252,14 +330,14 @@ function skinned(scene, bones) {
         // Clavicles point from the base of the neck out to the shoulder. Left
         // unaimed they keep their bind angle against a torso that has moved,
         // which is what pinches the deltoid at extreme reaches.
-        if (chain[3]) aim(chain[3], chest, a, step);
+        if (chain[3]) aim(chain[3], chest, a, step, flow);
 
-        aim(chain[0], a, b, step);
-        aim(chain[1], b, c, step);
+        aim(chain[0], a, b, step, flow);
+        aim(chain[1], b, c, step, flow);
 
-        // Feet and hands carry on along the limb, so they follow it instead of
+        // Feet carry on along the shin, so they follow the leg instead of
         // dangling at whatever the bind pose left them at.
-        if (chain[2]) aim(chain[2], b, c, step);
+        if (chain[2]) aim(chain[2], b, c, step, flow);
       }
     },
   };

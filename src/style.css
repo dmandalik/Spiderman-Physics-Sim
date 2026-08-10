@@ -23,14 +23,25 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-#stage {
+#stage,
+#stage3d {
   position: fixed;
   inset: 0;
   width: 100%;
   height: 100%;
   display: block;
   touch-action: none;
+}
+
+#stage {
   cursor: crosshair;
+}
+
+/* The character layer sits over the painted city. Input still belongs to the
+   2D canvas underneath, so this one never takes a pointer event. */
+#stage3d {
+  z-index: 1;
+  pointer-events: none;
 }
 
 .title,

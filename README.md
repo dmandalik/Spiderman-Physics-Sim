@@ -67,7 +67,23 @@ the direction he is moving. The web line hangs in a curve when slack and snaps
 straight under tension, and how far it hangs is exactly how much longer the web
 is than the gap it spans, so the curve is reading the same number the solver is.
 
-One honest cheat: he is drawn about three times life size. A 1.8 metre figure
+All four limbs go through the solver, the spine is four points that bow
+sideways as he leans, and the shoulders and hips counter rotate the way real
+bodies do. Every one of those values chases its target through a spring rather
+than being set to it, so the body arrives with a little overshoot and settles.
+That overshoot is most of the difference between a pose that was computed and
+one that looks animated. The two legs are deliberately not mirror images, since
+a body thrown around does not move as one lump.
+
+The character is rendered in 3D on a transparent WebGL canvas sitting over the
+painted city, with an orthographic camera locked to the same view. Orthographic
+rather than perspective, because a vanishing point on the figure would disagree
+with the flat parallax skyline behind it and read as a cutout pasted on. The
+city, sky, web and HUD all stay on the 2D canvas underneath, so the whole
+skyline still costs almost nothing to draw. If WebGL is unavailable the flat
+painter takes over and the page still runs.
+
+One honest cheat: he is drawn about four times life size. A 1.8 metre figure
 against a 120 metre tower is a speck at any zoom that still frames the city.
 The physics never sees that number, only the renderer does.
 

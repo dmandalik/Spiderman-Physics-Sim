@@ -146,8 +146,21 @@ test('the web cannot be reeled shorter than the minimum or past its range', () =
 
 test('a web out of range does not attach', () => {
   const world = hanging();
-  assert.equal(attachWeb(world, vec(0, 70 + world.params.maxWebRange + 1)), false);
+  // Along the street, the range is the range.
+  assert.equal(attachWeb(world, vec(world.params.maxWebRange + 1, 70)), false);
   assert.equal(world.web.attached, false);
+});
+
+// Reach is an ellipse, so height is worth more than distance. This is what lets
+// him grab the towers whose roofs sit above the top of the window.
+test('he can fire further straight up than straight along', () => {
+  const range = createWorld().params.maxWebRange;
+
+  const up = hanging();
+  assert.equal(attachWeb(up, vec(0, 70 + range * 1.3)), true);
+
+  const tooHigh = hanging();
+  assert.equal(attachWeb(tooHigh, vec(0, 70 + range * 1.6)), false);
 });
 
 test('letting go leaves the hero in free flight', () => {

@@ -9,7 +9,11 @@ import { springForce, solveRopeConstraint, webTension } from './web.js';
 export const DEFAULT_PARAMS = {
   gravity: 9.81, // m/s^2
   mass: 75, // kg
-  drag: 0.12, // quadratic drag coefficient, N per (m/s)^2
+  // Quadratic drag, in newtons per (m/s) squared. This is one half rho Cd A:
+  // air at 1.225, a drag coefficient near 1 for a person, and roughly 0.75
+  // square metres of frontal area. It puts terminal velocity around 40 m/s,
+  // which is what a falling body actually does.
+  drag: 0.45,
   webMode: 'rigid', // 'rigid' or 'elastic'
   stiffness: 20000, // N/m, elastic mode only
   damping: 900, // N per m/s, elastic mode only
@@ -28,7 +32,10 @@ export function createWorld(params = {}) {
   return {
     params: { ...DEFAULT_PARAMS, ...params },
     hero: { pos: start, prevPos: start, vel: vec(26, 0), radius: 0.9 },
-    web: { attached: false, anchor: vec(0, 0), restLength: 0 },
+    web: { attached: false, anchor: vec(0, 0), restLength: 0, since: -Infinity },
+    // Any extra force acting on him this step, in newtons. The physics does not
+    // care where it comes from, which keeps assists and boosts out of here.
+    applied: vec(0, 0),
     ground: 0,
     tension: 0, // newtons, recomputed every step for the HUD and the renderer
     time: 0,
@@ -50,7 +57,7 @@ export function netForce(world) {
     force = add(force, springForce(hero, web, params));
   }
 
-  return force;
+  return add(force, world.applied);
 }
 
 // One fixed timestep. Semi implicit Euler, which means velocity is updated
@@ -86,15 +93,38 @@ function resolveGround(world) {
   }
 }
 
+// How much further he can fire straight up than straight along the street.
+//
+// Reach is an ellipse rather than a circle, for two reasons. A rope spent going
+// up makes a tight fast arc, while the same length spent going down the street
+// makes a lazy one, so height is worth more than distance metre for metre. And
+// the roofs that sit above the top of the window are precisely the ones a
+// circle cut off, which is what made tall towers feel unusable.
+export const LIFT = 1.45;
+
+// The reach test. Shared with anchor picking so the marker can never offer a
+// rooftop the web will then refuse to attach to.
+export function withinReach(from, anchor, maxRange) {
+  const dx = (anchor.x - from.x) / maxRange;
+  const rise = anchor.y - from.y;
+  // Only upward gets the extra allowance. Falling to a low anchor is easy
+  // enough already and does not need help.
+  const dy = rise > 0 ? rise / (maxRange * LIFT) : rise / maxRange;
+
+  return dx * dx + dy * dy <= 1;
+}
+
 // Returns false when the anchor is out of range, so the caller can play a miss.
 export function attachWeb(world, anchor) {
   const reach = distance(world.hero.pos, anchor);
-  if (reach > world.params.maxWebRange) return false;
+  if (!withinReach(world.hero.pos, anchor, world.params.maxWebRange)) return false;
 
   world.web = {
     attached: true,
     anchor: vec(anchor.x, anchor.y),
     restLength: Math.max(reach, world.params.minWebLength),
+    // When it went out, so the renderer can hold a throw pose briefly.
+    since: world.time,
   };
   return true;
 }
@@ -111,7 +141,12 @@ export function reelWeb(world, direction, dt) {
   if (!web.attached || direction === 0) return;
 
   const next = web.restLength + direction * params.reelRate * dt;
-  web.restLength = Math.min(Math.max(next, params.minWebLength), params.maxWebRange);
+  // The ceiling stops him paying out further than he can fire, but it must
+  // never shorten a rope he already has. A steep shot can legitimately start
+  // longer than the range, and trimming it to fit would break the constraint on
+  // the spot and snap him at the roof.
+  const ceiling = Math.max(params.maxWebRange, web.restLength);
+  web.restLength = Math.min(Math.max(next, params.minWebLength), ceiling);
 }
 
 export function energy(world) {

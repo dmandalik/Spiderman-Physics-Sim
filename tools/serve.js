@@ -25,7 +25,9 @@ const TYPES = {
 
 createServer(async (request, response) => {
   const url = new URL(request.url, `http://localhost:${port}`);
-  const path = url.pathname === '/' ? '/index.html' : url.pathname;
+  // Decoded, so a folder with a space in its name is reachable. The reference
+  // art lives in one, and without this every request for it came back 404.
+  const path = url.pathname === '/' ? '/index.html' : decodeURIComponent(url.pathname);
 
   // Strip any ../ before joining, so a request can never climb out of the repo.
   const file = join(root, normalize(path).replace(/^(\.\.[/\\])+/, ''));

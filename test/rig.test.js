@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { distance, length, normalize } from '../src/physics/vec.js';
-import { solveTwoBone, targetUp, poseHero, HERO_HEIGHT, RENDER_SCALE } from '../src/render/rig.js';
+import { solveTwoBone, targetUp, poseHero, poseTargets, HERO_HEIGHT, RENDER_SCALE } from '../src/render/rig.js';
 
 const root = { x: 0, y: 0 };
 
@@ -88,17 +88,64 @@ test('the pose is built around the physics position', () => {
   const pos = { x: 100, y: 60 };
   const free = { attached: false, anchor: { x: 0, y: 0 } };
   const pose = poseHero({ pos, vel: { x: 0, y: 0 }, web: free, up: { x: 0, y: 1 } });
+  const [pelvis, , , neck] = pose.spine;
 
-  assert.ok(pose.head.y > pos.y, 'head above the centre of mass');
-  assert.ok(pose.pelvis.y < pos.y, 'pelvis below it');
+  assert.ok(pose.head.y > neck.y, 'head above the shoulders');
+  assert.ok(neck.y > pos.y, 'shoulders above the centre of mass');
+  assert.ok(pelvis.y < pos.y, 'pelvis below it');
   assert.equal(pose.height, HERO_HEIGHT * RENDER_SCALE);
+});
+
+test('the spine bows when he leans and straightens when he does not', () => {
+  const pos = { x: 0, y: 60 };
+  const free = { attached: false, anchor: { x: 0, y: 0 } };
+  const base = { pos, vel: { x: 0, y: 0 }, web: free, up: { x: 0, y: 1 } };
+
+  const straight = poseHero({ ...base, lean: 0 });
+  const bowed = poseHero({ ...base, lean: 1 });
+
+  assert.ok(Math.abs(straight.spine[1].x - pos.x) < 1e-9, 'no lean should mean no bow');
+  assert.ok(Math.abs(bowed.spine[1].x - pos.x) > 0.1, 'the waist should swing out');
+});
+
+test('shoulders and hips counter rotate', () => {
+  const pos = { x: 0, y: 60 };
+  const free = { attached: false, anchor: { x: 0, y: 0 } };
+  const pose = poseHero({ pos, vel: { x: 0, y: 0 }, web: free, up: { x: 0, y: 1 }, twist: 0.5 });
+
+  const shoulderTilt = pose.webArm[0].y - pose.spine[2].y;
+  const hipTilt = pose.legs[1][0].y - pose.spine[0].y;
+
+  assert.ok(shoulderTilt * hipTilt < 0, 'the two axes should tilt opposite ways');
+});
+
+test('every limb is a three joint chain', () => {
+  const pos = { x: 0, y: 60 };
+  const web = { attached: true, anchor: { x: 20, y: 90 }, restLength: 36 };
+  const pose = poseHero({ pos, vel: { x: 18, y: 2 }, web, up: { x: 0, y: 1 } });
+
+  for (const chain of [pose.webArm, pose.freeArm, ...pose.legs]) {
+    assert.equal(chain.length, 3);
+    assert.ok(chain.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y)));
+  }
+  assert.equal(pose.spine.length, 4);
+});
+
+test('the targets react to what the physics is doing', () => {
+  const free = { attached: false, anchor: { x: 0, y: 0 } };
+  const still = poseTargets({ pos: { x: 0, y: 60 }, vel: { x: 0, y: 0 }, web: free });
+  const fast = poseTargets({ pos: { x: 0, y: 60 }, vel: { x: 40, y: 0 }, web: free });
+
+  assert.equal(still.tuck, 0);
+  assert.equal(fast.tuck, 1, 'flat out should be fully tucked');
 });
 
 test('going faster tucks the legs up', () => {
   const pos = { x: 0, y: 60 };
   const free = { attached: false, anchor: { x: 0, y: 0 } };
   const feet = (speed) => {
-    const pose = poseHero({ pos, vel: { x: speed, y: 0 }, web: free, up: { x: 0, y: 1 } });
+    const { tuck } = poseTargets({ pos, vel: { x: speed, y: 0 }, web: free });
+    const pose = poseHero({ pos, vel: { x: speed, y: 0 }, web: free, up: { x: 0, y: 1 }, tuck });
     return pose.legs.map(([, , foot]) => length({ x: foot.x - pos.x, y: foot.y - pos.y }));
   };
 

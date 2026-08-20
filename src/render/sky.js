@@ -28,9 +28,9 @@ export function drawSky(ctx, camera) {
   const { width, height } = camera;
 
   const gradient = ctx.createLinearGradient(0, 0, 0, height);
-  gradient.addColorStop(0, '#03050d');
-  gradient.addColorStop(0.55, '#0a1230');
-  gradient.addColorStop(1, '#22355f');
+  gradient.addColorStop(0, '#1f3d78');
+  gradient.addColorStop(0.55, '#8f83ab');
+  gradient.addColorStop(1, '#f2c286');
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, width, height);
 
@@ -44,7 +44,7 @@ function drawStars(ctx, camera) {
   const offsetX = mod(-camera.pos.x * DRIFT, width);
   const offsetY = mod(camera.pos.y * DRIFT, band);
 
-  ctx.fillStyle = '#dce6ff';
+  ctx.fillStyle = '#ffe9c4';
   for (const star of stars) {
     ctx.globalAlpha = star.alpha;
     ctx.fillRect(
@@ -59,20 +59,20 @@ function drawStars(ctx, camera) {
 
 function drawMoon(ctx, x, y, radius) {
   const halo = ctx.createRadialGradient(x, y, radius, x, y, radius * 6);
-  halo.addColorStop(0, 'rgba(190, 214, 255, 0.16)');
-  halo.addColorStop(1, 'rgba(190, 214, 255, 0)');
+  halo.addColorStop(0, 'rgba(255, 216, 150, 0.34)');
+  halo.addColorStop(1, 'rgba(255, 208, 150, 0)');
   ctx.fillStyle = halo;
   ctx.beginPath();
   ctx.arc(x, y, radius * 6, 0, Math.PI * 2);
   ctx.fill();
 
-  ctx.fillStyle = '#e8eeff';
+  ctx.fillStyle = '#fff4dd';
   ctx.beginPath();
   ctx.arc(x, y, radius, 0, Math.PI * 2);
   ctx.fill();
 
   // Bite a crescent out with a second circle in the sky colour behind it.
-  ctx.fillStyle = '#080f26';
+  ctx.fillStyle = '#ffe9c4';
   ctx.beginPath();
   ctx.arc(x + radius * 0.42, y - radius * 0.3, radius * 0.94, 0, Math.PI * 2);
   ctx.fill();

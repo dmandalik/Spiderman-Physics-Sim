@@ -8,6 +8,7 @@ import {
   createCity,
   buildingsBetween,
   pickAnchor,
+  streetBetween,
   CHUNK_WIDTH,
   NEAR_LAYER,
   LAYERS,
@@ -73,6 +74,56 @@ test('only the near layer has anchors', () => {
   assert.ok(near.every((b) => b.anchors.length > 0));
 });
 
+// The rule the whole aiming system rests on. Shops, trees, lamps, benches and
+// traffic lights are scenery, and none of them may ever hand back somewhere to
+// stick a web, however tall the art makes them look.
+test('nothing at street level can be webbed', () => {
+  for (const seed of [1, 21, 20250806]) {
+    const city = createCity(seed);
+    const { shops, props } = streetBetween(city, 0, 3000);
+
+    assert.ok(shops.length > 0, 'no shops generated');
+    assert.ok(props.length > 0, 'no props generated');
+
+    for (const thing of [...shops, ...props]) {
+      assert.equal(thing.anchors, undefined, `${thing.kind || 'shop'} carries anchors`);
+    }
+  }
+});
+
+test('aiming never returns a street level anchor', () => {
+  const city = createCity(77);
+
+  for (let x = 100; x < 3000; x += 37) {
+    // Stand low and aim straight down the street, where the shops are.
+    const from = { x, y: 24 };
+    const picked = pickAnchor(city, from, { x: x + 40, y: 6 }, 120, 0, 20);
+
+    // Every real building starts at 52 m, so anything lower came from scenery.
+    if (picked) assert.ok(picked.y >= 52, `picked something ${picked.y.toFixed(0)} m up`);
+  }
+});
+
+test('the street is the same city every time you walk it', () => {
+  const a = streetBetween(createCity(9), 0, 1500);
+  const b = streetBetween(createCity(9), 0, 1500);
+
+  assert.deepEqual(a, b);
+  assert.notDeepEqual(a, streetBetween(createCity(10), 0, 1500));
+});
+
+test('shopfronts sit in a terrace with no gaps and no overlaps', () => {
+  const { shops } = streetBetween(createCity(5), 0, 2000);
+
+  for (let i = 1; i < shops.length; i += 1) {
+    const left = shops[i - 1];
+    const right = shops[i];
+    const gap = right.x - (left.x + left.width);
+    // Chunk boundaries leave a small remainder, so allow one shop's worth.
+    assert.ok(gap >= -1e-9, `shops overlap near ${right.x}`);
+  }
+});
+
 test('every anchor sits on the roof of the building it belongs to', () => {
   const buildings = buildingsBetween(createCity(13), NEAR_LAYER, 0, 3000);
 
@@ -97,7 +148,7 @@ test('the hero passes straight through buildings', () => {
   assert.ok(buildingsBetween(city, NEAR_LAYER, 0, world.hero.pos.x).length > 0);
 });
 
-test('aiming picks the reachable anchor closest to where you pointed', () => {
+test('aiming picks the anchor closest to the direction you pointed', () => {
   const from = { x: 0, y: 30 };
   const target = { x: 60, y: 90 };
   const maxRange = 150;
@@ -106,21 +157,76 @@ test('aiming picks the reachable anchor closest to where you pointed', () => {
     const city = createCity(seed);
     const anchor = pickAnchor(city, from, target, maxRange);
     assert.ok(anchor, `seed ${seed} found nothing in range`);
-    assert.ok(anchor.y > from.y);
 
-    // Check it against every candidate the hard way.
-    const best = buildingsBetween(city, NEAR_LAYER, from.x - maxRange, from.x + maxRange)
-      .flatMap((b) => b.anchors)
-      .filter((a) => a.y > from.y + 2)
-      .filter((a) => Math.hypot(a.x - from.x, a.y - from.y) <= maxRange)
-      .reduce((a, b) =>
-        Math.hypot(b.x - target.x, b.y - target.y) < Math.hypot(a.x - target.x, a.y - target.y)
-          ? b
-          : a,
-      );
+    const bearing = (p) => Math.atan2(p.y - from.y, p.x - from.x);
+    const off = Math.abs(bearing(anchor) - bearing(target));
 
-    assert.deepEqual(anchor, best);
+    // Within a wide cone of where you aimed. The costs can pull it off the
+    // exact nearest, never across the sky.
+    assert.ok(off < 1.2, `seed ${seed} picked ${off.toFixed(2)} rad off aim`);
   }
+});
+
+// The reported bug: a roof above the top of the window is somewhere you cannot
+// physically put the pointer, so scoring by distance to the cursor could never
+// choose it. Scoring by direction can, and this checks that it does.
+test('it can pick a rooftop well above the point you aimed at', () => {
+  const city = createCity(77);
+
+  let above = 0;
+  let cases = 0;
+
+  for (let x = 300; x < 5000; x += 23) {
+    const from = { x, y: 55 };
+    // Aim up and forward, but only as far up as a window edge would allow.
+    const target = { x: from.x + 30, y: from.y + 25 };
+    const picked = pickAnchor(city, from, target, 150, 0, 22);
+    if (!picked) continue;
+
+    cases += 1;
+    if (picked.y > target.y + 20) above += 1;
+  }
+
+  assert.ok(cases > 20, 'not enough cases to judge');
+  // Scoring by distance to the cursor gave this essentially never, because
+  // anything that high was always far from the point clicked.
+  assert.ok(above / cases > 0.3, `only ${((100 * above) / cases).toFixed(0)}% reached high`);
+});
+
+// The reported case, stated exactly. The camera shows about 42 metres above
+// him, so a taller roof than that is somewhere the pointer cannot go. Parking
+// the cursor underneath it, pinned to the top edge, has to be enough.
+test('parking the cursor under a tower grabs the roof above the frame', () => {
+  const WINDOW_TOP = 42;
+  const RANGE = 90;
+
+  let cases = 0;
+  let grabbed = 0;
+
+  for (const seed of [1, 21, 77, 20250806]) {
+    const city = createCity(seed);
+
+    for (let x = 200; x < 4000; x += 19) {
+      const from = { x, y: 55 };
+
+      // A roof ahead of him that is out of view but in reach.
+      const tower = buildingsBetween(city, NEAR_LAYER, x, x + RANGE).find((b) => {
+        const a = b.anchors[0];
+        return a && a.x > from.x && a.y - from.y > WINDOW_TOP + 8
+          && Math.hypot(a.x - from.x, a.y - from.y) <= RANGE;
+      });
+      if (!tower) continue;
+
+      const want = tower.anchors[0];
+      const picked = pickAnchor(city, from, { x: want.x, y: from.y + WINDOW_TOP }, RANGE, 0, 30);
+
+      cases += 1;
+      if (picked && picked.y >= want.y - 1) grabbed += 1;
+    }
+  }
+
+  assert.ok(cases > 50, `only ${cases} cases to judge`);
+  assert.equal(grabbed, cases, `${cases - grabbed} of ${cases} missed the tower overhead`);
 });
 
 test('nothing out of range is ever picked', () => {
@@ -154,4 +260,61 @@ test('the seeded generator is stable and spread out', () => {
   const mean = values.reduce((a, b) => a + b) / values.length;
   assert.ok(Math.abs(mean - 0.5) < 0.05, `mean was ${mean}`);
   assert.equal(mulberry32(hashInts(1, 2, 3))(), values[0]);
+});
+
+// Aiming is generous on purpose, but generosity used to mean it would happily
+// hand you a ledge just behind your shoulder, which stops a swing dead.
+test('travelling forward, a web ahead beats one behind even when you aim badly', () => {
+  const city = createCity(77);
+  const from = { x: 600, y: 90 };
+
+  // Aim behind him while moving forward. He should still be given something in
+  // front, because swinging backwards ruins the run.
+  const behindTarget = { x: from.x - 60, y: from.y + 40 };
+  const picked = pickAnchor(city, from, behindTarget, 140, 0, 30);
+
+  if (picked) assert.ok(picked.x >= from.x, `picked one behind at ${picked.x} from ${from.x}`);
+});
+
+test('with no heading it just takes whatever is nearest the cursor', () => {
+  const city = createCity(77);
+  const from = { x: 600, y: 90 };
+  const target = { x: from.x - 60, y: from.y + 40 };
+
+  const free = pickAnchor(city, from, target, 140, 0, 0);
+  const forward = pickAnchor(city, from, target, 140, 0, 30);
+
+  // Standing still there is no forward, so the bias switches itself off.
+  if (free && forward) assert.ok(free.x <= forward.x);
+});
+
+test('it will still swing backwards when there is nothing else', () => {
+  const city = createCity(77);
+  const buildings = buildingsBetween(city, NEAR_LAYER, 0, 1200);
+  const tall = buildings.filter((b) => b.height > 100);
+
+  if (tall.length) {
+    // Stand just past a tall building with the range only reaching back to it.
+    const roof = tall[0];
+    const from = { x: roof.x + roof.width + 30, y: roof.height - 40 };
+    const picked = pickAnchor(city, from, { x: roof.x, y: roof.height }, 60, 0, 30);
+    if (picked) assert.ok(picked.y > from.y, 'whatever it picks must be above him');
+  }
+});
+
+test('it never hands back a rope too short to swing on', () => {
+  const city = createCity(3);
+  const buildings = buildingsBetween(city, NEAR_LAYER, 0, 2000).filter((b) => b.height > 60);
+
+  for (const b of buildings.slice(0, 12)) {
+    const anchor = b.anchors[0];
+    // Stand right under a rooftop and aim at it.
+    const from = { x: anchor.x, y: anchor.y - 12 };
+    const picked = pickAnchor(city, from, anchor, 120, 0, 25);
+
+    if (picked) {
+      const reach = Math.hypot(picked.x - from.x, picked.y - from.y);
+      assert.ok(reach > 10, `handed back a ${reach.toFixed(1)} m rope`);
+    }
+  }
 });

@@ -4,19 +4,21 @@
 // sky colour is painted over it before the next layer goes down. That haze is
 // doing most of the work, because distance in air is really just contrast
 // being eaten by the atmosphere.
+//
+// Every building is a pixel grid rasterised once and then blitted. The grid is
+// built the first time the building is on screen rather than when its chunk is
+// generated, because a chunk holds buildings you may never look at and a tower
+// is a hundred and sixty thousand cells.
 
 import { worldToScreen, layerCamera } from './camera.js';
 import { LAYERS, buildingsBetween } from '../world/city.js';
-import { WINDOW } from '../world/building.js';
+import { buildFacade, facadePalette } from './pixel/facade.js';
+import { cells } from './pixel/grid.js';
+import { createSprite, drawSprite, ifAffordable } from './pixel/sprite.js';
+import { mulberry32 } from '../world/random.js';
 
-const HAZE = '#101c3c';
-const WINDOW_DIM = 'rgba(255, 214, 150, 0.34)';
-const WINDOW_BRIGHT = 'rgba(255, 236, 196, 0.85)';
-const ANCHOR_DOT = 'rgba(77, 226, 255, 0.3)';
-
-// Below this many pixels per metre the windows are smaller than a pixel and
-// only cost time, so they get skipped entirely.
-const WINDOW_ZOOM_CUTOFF = 3.4;
+const HAZE = '#b79ab0';
+const ANCHOR_DOT = 'rgba(255, 170, 110, 0.35)';
 
 export function drawCity(ctx, city, camera, ground) {
   LAYERS.forEach((layer, index) => {
@@ -36,75 +38,65 @@ export function drawCity(ctx, city, camera, ground) {
 }
 
 function drawLayer(ctx, buildings, cam, layer, ground) {
-  const rects = [];
+  const visible = [];
 
-  ctx.fillStyle = layer.shade;
   for (const building of buildings) {
     const topLeft = worldToScreen(cam, { x: building.x, y: ground + building.height });
-    const bottomRight = worldToScreen(cam, { x: building.x + building.width, y: ground });
+    const width = building.width * cam.zoom;
+    if (topLeft.x + width < 0 || topLeft.x > cam.width) continue;
 
-    const rect = {
-      x: topLeft.x,
-      y: topLeft.y,
-      w: bottomRight.x - topLeft.x,
-      h: bottomRight.y - topLeft.y,
-    };
-
-    // Off screen sideways, so skip it and its windows too.
-    if (rect.x + rect.w < 0 || rect.x > cam.width) continue;
-
-    ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
-    rects.push({ rect, building });
+    const height = building.height * cam.zoom;
+    drawBuilding(ctx, building, topLeft.x, topLeft.y, width, height, layer);
+    visible.push(building);
   }
 
-  drawRoofEdges(ctx, rects, layer);
-
-  if (cam.zoom >= WINDOW_ZOOM_CUTOFF) drawWindows(ctx, rects, cam);
-  if (layer.anchors) drawAnchors(ctx, rects, cam);
+  if (layer.anchors) drawAnchors(ctx, visible, cam);
 }
 
-// A lit top edge separates overlapping silhouettes that are all the same
-// colour, and doubles as a hint about where a web will stick.
-function drawRoofEdges(ctx, rects, layer) {
-  ctx.strokeStyle = layer.roof;
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
+// One blit, or a flat block if the sprite is not ready yet. The flat block is
+// the right colour and exactly the right size, so a building that appears a
+// frame or two before its detail does not move or change shape when it lands.
+function drawBuilding(ctx, building, x, y, width, height, layer) {
+  const sprite = building.sprite || make(building);
 
-  for (const { rect } of rects) {
-    ctx.moveTo(rect.x, rect.y);
-    ctx.lineTo(rect.x + rect.w, rect.y);
+  if (!sprite) {
+    ctx.fillStyle = building.face || layer.shade;
+    ctx.fillRect(Math.round(x), Math.round(y), Math.max(Math.round(width), 1), Math.max(Math.round(height), 1));
+    return;
   }
 
-  ctx.stroke();
+  // Scaled to the world rectangle rather than to a whole number of pixels per
+  // cell. Geometry has to win here: a rooftop is where a web sticks, so a
+  // building drawn even a few pixels wider than it is would put its anchors
+  // somewhere the physics disagrees with.
+  drawSprite(ctx, sprite, x, y, width, height);
 }
 
-// Two passes, one fill colour each. Setting fillStyle per window would mean
-// thousands of state changes a frame for no visible gain.
-function drawWindows(ctx, rects, cam) {
-  const w = Math.max(WINDOW.width * cam.zoom, 1);
-  const h = Math.max(WINDOW.height * cam.zoom, 1);
+function make(building) {
+  return ifAffordable(() => {
+    const grid = buildFacade({
+      kind: building.kind,
+      shape: building.shape,
+      texture: building.texture,
+      escape: building.escape,
+      cols: cells(building.width),
+      rows: cells(building.height),
+      rng: mulberry32(building.seed),
+    });
 
-  for (const bright of [false, true]) {
-    ctx.fillStyle = bright ? WINDOW_BRIGHT : WINDOW_DIM;
-
-    for (const { building } of rects) {
-      for (const win of building.windows) {
-        if (win.bright !== bright) continue;
-        const p = worldToScreen(cam, { x: win.x, y: win.y + WINDOW.height });
-        ctx.fillRect(p.x, p.y, w, h);
-      }
-    }
-  }
+    building.sprite = createSprite(grid, facadePalette(building.face));
+    return building.sprite;
+  });
 }
 
-function drawAnchors(ctx, rects, cam) {
+function drawAnchors(ctx, buildings, cam) {
   if (cam.zoom < 2.5) return;
 
   ctx.fillStyle = ANCHOR_DOT;
-  for (const { building } of rects) {
+  for (const building of buildings) {
     for (const anchor of building.anchors) {
       const p = worldToScreen(cam, anchor);
-      ctx.fillRect(p.x - 1.5, p.y - 1.5, 3, 3);
+      ctx.fillRect(Math.round(p.x) - 1, Math.round(p.y) - 1, 3, 3);
     }
   }
 }

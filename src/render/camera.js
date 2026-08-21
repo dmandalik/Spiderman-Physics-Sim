@@ -7,8 +7,13 @@
 
 import { vec } from '../physics/vec.js';
 
-const BASE_ZOOM = 9.5; // pixels per metre at rest
-const MIN_ZOOM = 4.6;
+// Pixels per metre. Both ends are multiples of five on purpose: an art cell is
+// a fifth of a metre, so at five pixels per metre a cell is exactly one screen
+// pixel and at ten it is exactly two. Anything between those puts cell edges on
+// fractions of a pixel, and nearest neighbour then drops or doubles rows at
+// random, which is the shimmer that gives cheap pixel art away.
+const BASE_ZOOM = 10;
+const MIN_ZOOM = 5;
 const LOOKAHEAD = 0.45; // seconds of velocity to lead by
 const FOLLOW_RATE = 3.2; // higher snaps harder to the target
 

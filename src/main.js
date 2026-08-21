@@ -1,15 +1,20 @@
 // Wiring. Canvas setup, input, and the frame loop that ties the fixed timestep
 // physics to a variable rate display.
 
-import { createWorld, step, attachWeb, releaseWeb, reelWeb } from './physics/world.js';
+import { createWorld, step, attachWeb, releaseWeb, reelWeb, DEFAULT_PARAMS } from './physics/world.js';
+import { assistForce, assistReel, assistReach, HEROIC } from './physics/assist.js';
 import { lerp } from './physics/vec.js';
 import { createStepper } from './loop.js';
 import { createCity, pickAnchor } from './world/city.js';
 import { createCamera, updateCamera, screenToWorld } from './render/camera.js';
 import { drawScene } from './render/scene.js';
 import { createHud } from './ui/hud.js';
+import { createControls } from './ui/controls.js';
+import { labDefaults } from './physics/tunables.js';
 import { createStage } from './render/three/stage.js';
 import { createCharacter } from './render/three/character.js';
+
+const ZERO = { x: 0, y: 0 };
 
 const TRAIL_LENGTH = 48;
 const TRAIL_INTERVAL = 0.02; // seconds between samples
@@ -19,7 +24,11 @@ const ctx = canvas.getContext('2d');
 
 // If WebGL is unavailable the flat painter takes over, so the page still runs
 // rather than showing a city with nobody in it.
-const stage = tryStage();
+// Pixel art by default. The rigged model is kept behind ?render=3d rather than
+// deleted, so the two can be compared without digging through history.
+const renderer = new URLSearchParams(location.search).get('render') === '3d' ? '3d' : 'pixel';
+
+const stage = renderer === '3d' ? tryStage() : null;
 
 // Starts as the mannequin and swaps itself for the rigged mesh the moment one
 // finishes loading, so the page is never waiting on an asset to be playable.
@@ -47,13 +56,53 @@ const world = createWorld();
 const city = createCity(seed);
 const camera = createCamera();
 const advance = createStepper();
-const updateHud = createHud(document.getElementById('hud'));
+const hud = createHud(document.getElementById('hud'));
+
+// The lab's own copy of every number, so switching away and back keeps whatever
+// you set up. Declared before the panel because the panel writes into it.
+const lab = labDefaults();
+const controls = createControls(document.getElementById('lab'), lab, resetLab);
 
 const trail = [];
 let trailClock = 0;
 let pointer = null; // last pointer position in screen pixels
 let reelDirection = 0; // -1 reels in, +1 pays out
+
+// Three modes, and they differ in one thing: who decides the numbers.
+//
+// Real is the honest simulation. Heroic keeps the same solver but thins the air,
+// pulls harder and lets him pump the swing along the web. Lab hands the whole
+// parameter set to you, which is the only one of the three where the physics can
+// be wrong on purpose, and that is the point of it.
+const MODES = ['real', 'heroic', 'lab'];
+let mode = 'real';
+
+const REAL_ASSIST = { ...HEROIC, enabled: false };
+const HEROIC_ASSIST = { ...HEROIC, enabled: true };
+
 let lastFrame = performance.now();
+
+// What the solver reads this frame. Assigning the whole object rather than
+// copying values across is what makes a slider take effect immediately: the lab
+// panel writes into the very object the solver is about to read.
+function applyMode() {
+  if (mode === 'lab') {
+    world.params = lab.params;
+    return;
+  }
+
+  world.params = {
+    ...DEFAULT_PARAMS,
+    // Real air is thick enough to matter. Heroic air is not, and heroic gravity
+    // pulls harder so the falls do not float.
+    ...(mode === 'heroic' ? { drag: HEROIC.drag, gravity: HEROIC.gravity } : {}),
+  };
+}
+
+function assistSettings() {
+  if (mode === 'lab') return lab.assist;
+  return mode === 'heroic' ? HEROIC_ASSIST : REAL_ASSIST;
+}
 
 function resize() {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -76,7 +125,10 @@ function pointerWorld() {
 function aimedAnchor() {
   const target = pointerWorld();
   if (!target) return null;
-  return pickAnchor(city, world.hero.pos, target, world.params.maxWebRange, world.ground);
+  const settings = assistSettings();
+  const range = settings.enabled ? assistReach(world.params, settings) : world.params.maxWebRange;
+  // Passing which way he is going lets the pick favour anchors ahead of him.
+  return pickAnchor(city, world.hero.pos, target, range, world.ground, world.hero.vel.x);
 }
 
 function shootWeb() {
@@ -103,6 +155,9 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'KeyW' || e.code === 'ArrowUp') reelDirection = -1;
   if (e.code === 'KeyS' || e.code === 'ArrowDown') reelDirection = 1;
   if (e.code === 'KeyR') reset();
+  if (e.code === 'KeyM') setMode(MODES[(MODES.indexOf(mode) + 1) % MODES.length]);
+  if (e.code === 'KeyL') setMode(mode === 'lab' ? 'real' : 'lab');
+  if (e.code === 'KeyH') hud.toggle();
   if (e.code === 'Space') {
     e.preventDefault();
     world.web.attached ? releaseWeb(world) : shootWeb();
@@ -117,6 +172,22 @@ window.addEventListener('keyup', (e) => {
 // Watching the canvas itself rather than the window catches every case, from
 // a browser resize to a phone rotating to the pane it lives in changing size.
 new ResizeObserver(resize).observe(canvas);
+
+function setMode(next) {
+  mode = next;
+  applyMode();
+  controls.show(mode === 'lab');
+}
+
+// Puts every knob back where the honest simulation has it, without leaving lab
+// mode, so you can undo an experiment rather than having to remember what it
+// was before you started.
+function resetLab() {
+  const fresh = labDefaults();
+  Object.assign(lab.params, fresh.params);
+  Object.assign(lab.assist, fresh.assist);
+  controls.refresh();
+}
 
 function reset() {
   const fresh = createWorld(world.params);
@@ -133,7 +204,10 @@ function frame(now) {
   lastFrame = now;
 
   const { alpha } = advance(frameTime * world.params.timeScale, (dt) => {
-    reelWeb(world, reelDirection, dt);
+    // Reeling by hand always wins, so the assist never fights the player.
+    const settings = assistSettings();
+    world.applied = settings.enabled ? assistForce(world, settings) : ZERO;
+    reelWeb(world, reelDirection || (settings.enabled ? assistReel(world, settings) : 0), dt);
     step(world, dt);
 
     trailClock += dt;
@@ -153,7 +227,8 @@ function frame(now) {
   updateCamera(camera, world.hero, dt, world.ground);
 
   const pose = drawScene(ctx, world, camera, {
-    flat: !stage,
+    mode: renderer,
+    flat: renderer === '3d' && !stage,
     city,
     heroPos,
     trail,
@@ -167,10 +242,11 @@ function frame(now) {
     stage.render();
   }
 
-  updateHud(world, frameTime);
+  hud.update(world, frameTime, mode);
   requestAnimationFrame(frame);
 }
 
 resize();
+setMode(mode);
 camera.pos = { ...world.hero.pos };
 requestAnimationFrame(frame);

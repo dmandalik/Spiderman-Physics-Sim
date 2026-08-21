@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>facade preview</title>
+    <style>
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 40px;
+        background: linear-gradient(#7d7aa6, #e9bd8c);
+        font: 12px ui-monospace, monospace;
+        color: #2a1b2e;
+      }
+      canvas {
+        image-rendering: pixelated;
+      }
+      figure {
+        margin: 0;
+        text-align: center;
+      }
+      figcaption {
+        margin-top: 10px;
+        letter-spacing: 0.1em;
+      }
+      img {
+        image-rendering: pixelated;
+      }
+    </style>
+  </head>
+  <body>
+    <figure>
+      <canvas id="ref"></canvas>
+      <figcaption>the reference</figcaption>
+    </figure>
+    <figure>
+      <canvas id="one"></canvas>
+      <figcaption id="size">one building</figcaption>
+    </figure>
+
+    <script type="module">
+      import { buildFacade, facadePalette, CELL } from '/src/render/pixel/facade.js';
+      import { mulberry32 } from '/src/world/random.js';
+
+      // A shop sized the way the reference sizes one: about nine metres wide and
+      // thirteen tall, which at a fifth of a metre per cell is 46 by 66.
+      const cols = 46;
+      const rows = 66;
+      const rng = mulberry32(7);
+
+      const grid = buildFacade({ cols, rows, floors: 2, shopfront: true, rng });
+      const palette = facadePalette('#cfae72');
+
+      const SCALE = 6; // screen pixels per art pixel, so the grid is unmissable
+      const canvas = document.getElementById('one');
+      canvas.width = cols * SCALE;
+      canvas.height = rows * SCALE;
+      const ctx = canvas.getContext('2d');
+
+      grid.forEach((row, y) => {
+        [...row].forEach((key, x) => {
+          ctx.fillStyle = palette[key] || '#f0f';
+          ctx.fillRect(x * SCALE, y * SCALE, SCALE, SCALE);
+        });
+      });
+
+      document.getElementById('size').textContent =
+        `${cols} by ${rows} cells, ${(cols * CELL).toFixed(1)} by ${(rows * CELL).toFixed(1)} metres`;
+
+      // Crop the reference to one shop so the two sit side by side at the same
+      // apparent size, which is the only honest way to compare them.
+      const source = new Image();
+      source.src = '/game references/city.jpg';
+      await source.decode();
+
+      const ref = document.getElementById('ref');
+      const RW = 50;
+      const RH = 72;
+      ref.width = RW * SCALE;
+      ref.height = RH * SCALE;
+      const rctx = ref.getContext('2d');
+      rctx.imageSmoothingEnabled = false;
+      rctx.drawImage(source, 198, 196, RW, RH, 0, 0, RW * SCALE, RH * SCALE);
+    </script>
+  </body>
+</html>

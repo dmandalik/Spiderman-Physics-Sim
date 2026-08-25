@@ -19,46 +19,11 @@
       <p>A pendulum that happens to wear a mask</p>
     </header>
 
-    <section id="hud" class="hud">
-      <button id="hudToggle" class="hud-toggle" aria-expanded="true">Physics</button>
-      <div class="hud-body">
-        <h2 class="group">Motion</h2>
-        <div class="stat"><span class="label">Speed</span><span class="value" data-field="speed">0</span><span class="unit">m/s</span></div>
-        <div class="stat"><span class="label">Horizontal</span><span class="value" data-field="vx">0</span><span class="unit">m/s</span></div>
-        <div class="stat"><span class="label">Vertical</span><span class="value" data-field="vy">0</span><span class="unit">m/s</span></div>
-        <div class="stat"><span class="label">Height</span><span class="value" data-field="height">0</span><span class="unit">m</span></div>
-        <div class="stat"><span class="label">Travelled</span><span class="value" data-field="distance">0</span><span class="unit">m</span></div>
-        <div class="stat"><span class="label">Acceleration</span><span class="value" data-field="accel">0</span><span class="unit">m/s²</span></div>
-        <h2 class="group">Forces</h2>
-        <div class="stat"><span class="label">Web tension</span><span class="value" data-field="tension">0</span><span class="unit">kN</span></div>
-        <div class="stat"><span class="label">Web load</span><span class="value" data-field="gforce">0</span><span class="unit">g</span></div>
-        <div class="stat"><span class="label">Drag</span><span class="value" data-field="drag">0</span><span class="unit">N</span></div>
-        <div class="stat"><span class="label">Weight</span><span class="value" data-field="weight">0</span><span class="unit">N</span></div>
-        <div class="stat"><span class="label">Assist</span><span class="value" data-field="applied">0</span><span class="unit">N</span></div>
-        <div class="stat"><span class="label">Net force</span><span class="value" data-field="net">0</span><span class="unit">kN</span></div>
-        <h2 class="group">Energy</h2>
-        <div class="stat"><span class="label">Kinetic</span><span class="value" data-field="kinetic">0</span><span class="unit">kJ</span></div>
-        <div class="stat"><span class="label">Potential</span><span class="value" data-field="potential">0</span><span class="unit">kJ</span></div>
-        <div class="stat"><span class="label">Total</span><span class="value" data-field="energy">0</span><span class="unit">kJ</span></div>
-        <div class="stat"><span class="label">Net power</span><span class="value" data-field="power">0</span><span class="unit">kW</span></div>
-        <div class="stat"><span class="label">Drag power</span><span class="value" data-field="dragpower">0</span><span class="unit">kW</span></div>
-        <h2 class="group">Pendulum</h2>
-        <div class="stat"><span class="label">Web length</span><span class="value" data-field="web">0</span><span class="unit">m</span></div>
-        <div class="stat"><span class="label">Angle</span><span class="value" data-field="angle">0</span><span class="unit">°</span></div>
-        <div class="stat"><span class="label">Angular rate</span><span class="value" data-field="omega">0</span><span class="unit">rad/s</span></div>
-        <div class="stat"><span class="label">Centripetal</span><span class="value" data-field="centripetal">0</span><span class="unit">m/s²</span></div>
-        <div class="stat"><span class="label">Period</span><span class="value" data-field="period">0</span><span class="unit">s</span></div>
-        <h2 class="group">System</h2>
-        <div class="stat"><span class="label">Mode</span><span class="value" data-field="mode">0</span><span class="unit"></span></div>
-        <div class="stat"><span class="label">Sim time</span><span class="value" data-field="time">0</span><span class="unit">s</span></div>
-        <div class="stat"><span class="label">FPS</span><span class="value" data-field="fps">0</span><span class="unit"></span></div>
-      </div>
-    </section>
+    <section id="hud" class="hud"></section>
 
-    <section id="lab" class="lab hidden">
-      <h1 class="lab-title">Lab</h1>
-      <p class="lab-note">Every number the solver reads. Nothing here is applied later, it is applied now.</p>
-    </section>
+    <section id="lab" class="lab hidden"></section>
+
+    <div id="corner" class="corner"></div>
 
     <footer class="hints">
       <span><kbd>Hold click</kbd> shoot a web</span>

@@ -5,11 +5,13 @@ import { createWorld, step, attachWeb, releaseWeb, reelWeb, DEFAULT_PARAMS } fro
 import { assistForce, assistReel, assistReach, HEROIC } from './physics/assist.js';
 import { lerp } from './physics/vec.js';
 import { createStepper } from './loop.js';
-import { createCity, pickAnchor } from './world/city.js';
+import { createCity, pickAnchor, repaintCity } from './world/city.js';
 import { createCamera, updateCamera, screenToWorld } from './render/camera.js';
 import { drawScene } from './render/scene.js';
 import { createHud } from './ui/hud.js';
 import { createControls } from './ui/controls.js';
+import { createTimeButton } from './ui/timeButton.js';
+import { createTitle, createHints } from './ui/chrome.js';
 import { labDefaults } from './physics/tunables.js';
 import { createStage } from './render/three/stage.js';
 import { createCharacter } from './render/three/character.js';
@@ -62,6 +64,21 @@ const hud = createHud(document.getElementById('hud'));
 // you set up. Declared before the panel because the panel writes into it.
 const lab = labDefaults();
 const controls = createControls(document.getElementById('lab'), lab, resetLab);
+// Changing the hour changes colours that are baked into the sprites, so every
+// one of them is dropped and rebuilt. The budget keeps that off the frame.
+createTimeButton(document.getElementById('corner'), () => repaintCity(city));
+
+// The last two bits of smooth type on the screen, redrawn in the bitmap font.
+createTitle(document.querySelector('.title'), 'Spider Swing', 'A pendulum in a mask');
+createHints(document.querySelector('.hints'), [
+  { keys: ['Click'], text: 'web' },
+  { keys: ['W', 'S'], text: 'reel' },
+  { keys: ['Space'], text: 'toggle' },
+  { keys: ['M'], text: 'mode' },
+  { keys: ['L'], text: 'lab' },
+  { keys: ['H'], text: 'hide' },
+  { keys: ['R'], text: 'reset' },
+]);
 
 const trail = [];
 let trailClock = 0;

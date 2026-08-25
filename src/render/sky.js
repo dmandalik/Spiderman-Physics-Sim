@@ -5,6 +5,7 @@
 // normal parallax would squash them down onto the horizon instead.
 
 import { mulberry32 } from '../world/random.js';
+import { timeOfDay } from '../world/daylight.js';
 
 const STAR_COUNT = 180;
 const DRIFT = 0.05; // fraction of camera movement the stars pick up
@@ -26,19 +27,20 @@ function buildStars() {
 
 export function drawSky(ctx, camera) {
   const { width, height } = camera;
+  const time = timeOfDay();
 
   const gradient = ctx.createLinearGradient(0, 0, 0, height);
-  gradient.addColorStop(0, '#1f3d78');
-  gradient.addColorStop(0.55, '#8f83ab');
-  gradient.addColorStop(1, '#f2c286');
+  gradient.addColorStop(0, time.sky[0]);
+  gradient.addColorStop(0.55, time.sky[1]);
+  gradient.addColorStop(1, time.sky[2]);
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, width, height);
 
-  drawStars(ctx, camera);
-  drawMoon(ctx, width * 0.18, height * 0.2, Math.min(width, height) * 0.035);
+  if (time.stars > 0) drawStars(ctx, camera, time.stars);
+  drawMoon(ctx, width * 0.18, height * 0.2, Math.min(width, height) * 0.035, time);
 }
 
-function drawStars(ctx, camera) {
+function drawStars(ctx, camera, strength) {
   const { width, height } = camera;
   const band = height * STAR_BAND;
   const offsetX = mod(-camera.pos.x * DRIFT, width);
@@ -46,7 +48,7 @@ function drawStars(ctx, camera) {
 
   ctx.fillStyle = '#ffe9c4';
   for (const star of stars) {
-    ctx.globalAlpha = star.alpha;
+    ctx.globalAlpha = star.alpha * strength;
     ctx.fillRect(
       mod(star.x * width + offsetX, width),
       mod(star.y * band + offsetY, band),
@@ -57,22 +59,26 @@ function drawStars(ctx, camera) {
   ctx.globalAlpha = 1;
 }
 
-function drawMoon(ctx, x, y, radius) {
+// The moon, or the sun. Same disc, and the only difference is whether a second
+// circle bites a crescent out of it and how warm the halo is.
+function drawMoon(ctx, x, y, radius, time) {
   const halo = ctx.createRadialGradient(x, y, radius, x, y, radius * 6);
-  halo.addColorStop(0, 'rgba(255, 216, 150, 0.34)');
+  halo.addColorStop(0, time.halo);
   halo.addColorStop(1, 'rgba(255, 208, 150, 0)');
   ctx.fillStyle = halo;
   ctx.beginPath();
   ctx.arc(x, y, radius * 6, 0, Math.PI * 2);
   ctx.fill();
 
-  ctx.fillStyle = '#fff4dd';
+  ctx.fillStyle = time.disc;
   ctx.beginPath();
   ctx.arc(x, y, radius, 0, Math.PI * 2);
   ctx.fill();
 
+  if (!time.crescent) return;
+
   // Bite a crescent out with a second circle in the sky colour behind it.
-  ctx.fillStyle = '#ffe9c4';
+  ctx.fillStyle = time.sky[0];
   ctx.beginPath();
   ctx.arc(x + radius * 0.42, y - radius * 0.3, radius * 0.94, 0, Math.PI * 2);
   ctx.fill();

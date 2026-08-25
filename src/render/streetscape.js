@@ -11,10 +11,11 @@ import { worldToScreen } from './camera.js';
 import { streetBetween } from '../world/city.js';
 import { STREET } from '../world/street.js';
 import { buildFacade, facadePalette, shopfrontRow } from './pixel/facade.js';
-import { buildProp, PROP_COLOURS, PROP_SIZES } from './pixel/props.js';
+import { buildProp, propPalette, PROP_SIZES } from './pixel/props.js';
 import { cells } from './pixel/grid.js';
 import { createSprite, drawSprite, ifAffordable } from './pixel/sprite.js';
 import { mulberry32 } from '../world/random.js';
+import { underLight } from '../world/daylight.js';
 
 const PAVEMENT = '#cbb49a';
 const PAVEMENT_SHADE = '#b09880';
@@ -50,7 +51,7 @@ function drawGround(ctx, camera, ground) {
   const right = camera.pos.x + width / 2 / camera.zoom;
   const worldX = (x) => worldToScreen(camera, { x, y: ground }).x;
 
-  ctx.fillStyle = PAVEMENT;
+  ctx.fillStyle = underLight(PAVEMENT);
   block(ctx, 0, top, width, kerbY - top);
 
   // Paving slabs, snapped to a world grid so they slide past at the right speed
@@ -65,16 +66,16 @@ function drawGround(ctx, camera, ground) {
   }
   block(ctx, 0, top + slabH, width, 1);
 
-  ctx.fillStyle = PAVEMENT_SHADE;
+  ctx.fillStyle = underLight(PAVEMENT_SHADE);
   block(ctx, 0, kerbY - Math.max(camera.zoom * 0.8, 2), width, Math.max(camera.zoom * 0.8, 2));
-  ctx.fillStyle = KERB;
+  ctx.fillStyle = underLight(KERB);
   block(ctx, 0, kerbY, width, Math.max(camera.zoom * 0.7, 2));
 
   const roadTop = kerbY + Math.max(camera.zoom * 0.7, 2);
-  ctx.fillStyle = ROAD;
+  ctx.fillStyle = underLight(ROAD);
   block(ctx, 0, roadTop, width, camera.height - roadTop);
   // The gutter, where the asphalt meets the kerb and never sees the sun.
-  ctx.fillStyle = ROAD_EDGE;
+  ctx.fillStyle = underLight(ROAD_EDGE);
   block(ctx, 0, roadTop, width, Math.max(camera.zoom * 0.5, 1));
 
   // A cover every so often. Cheap, and without it the asphalt is the one
@@ -88,7 +89,7 @@ function drawGround(ctx, camera, ground) {
   const lineY = worldToScreen(camera, { x: 0, y: ground + STREET.kerb - 9 }).y;
   if (lineY > camera.height) return;
 
-  ctx.fillStyle = ROAD_LINE;
+  ctx.fillStyle = underLight(ROAD_LINE);
   for (let x = Math.floor(left / (DASH * 2)) * DASH * 2; x < right; x += DASH * 2) {
     block(ctx, worldX(x), lineY, DASH * camera.zoom, Math.max(camera.zoom * 0.35, 1));
   }
@@ -103,7 +104,7 @@ function drawShop(ctx, camera, shop, ground) {
   const sprite = shop.sprite || makeShopSprite(shop);
 
   if (!sprite) {
-    ctx.fillStyle = shop.face;
+    ctx.fillStyle = underLight(shop.face);
     block(ctx, topLeft.x, topLeft.y, width, height);
   } else {
     drawSprite(ctx, sprite, topLeft.x, topLeft.y, width, height);
@@ -174,7 +175,7 @@ function drawProp(ctx, camera, prop) {
 
 function makePropSprite(prop) {
   return ifAffordable(() => {
-    prop.sprite = createSprite(buildProp(prop.kind, mulberry32(prop.seed)), PROP_COLOURS);
+    prop.sprite = createSprite(buildProp(prop.kind, mulberry32(prop.seed)), propPalette());
     return prop.sprite;
   });
 }

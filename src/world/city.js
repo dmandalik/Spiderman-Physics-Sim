@@ -153,6 +153,20 @@ export function streetBetween(city, minX, maxX, ground = 0) {
   return { shops, props };
 }
 
+// Throws away every rasterised building and prop, so they rebuild under the
+// current light. The grids themselves are gone by then, dropped after
+// rasterising, so this rebuilds from the description rather than recolouring
+// anything, and the frame budget spreads the work over the next few frames.
+export function repaintCity(city) {
+  for (const cache of city.chunks) {
+    for (const chunk of cache.values()) for (const building of chunk) building.sprite = null;
+  }
+  for (const chunk of city.street.values()) {
+    for (const shop of chunk.shops) shop.sprite = null;
+    for (const prop of chunk.props) prop.sprite = null;
+  }
+}
+
 export function buildingsBetween(city, layerIndex, minX, maxX, ground = 0) {
   const first = Math.floor(minX / CHUNK_WIDTH);
   const last = Math.floor(maxX / CHUNK_WIDTH);

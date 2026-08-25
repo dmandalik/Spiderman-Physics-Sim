@@ -15,11 +15,12 @@
 // and a lamp post is scenery however tall the art makes it look.
 
 import { createGrid, CLEAR, cells } from './grid.js';
+import { timeOfDay, underLight } from '../../world/daylight.js';
 
 // One palette for the whole pavement, so a bench and a bin are lit the same
 // way. Wider than the eight a facade gets, because a street has leaves and
 // signal lenses in it and neither can be mixed from a wall colour.
-export const PROP_COLOURS = {
+const BASE_COLOURS = {
   a: '#191219', // outline
   b: '#33253a', // ironwork in shadow
   c: '#4e3a52', // ironwork lit
@@ -36,6 +37,21 @@ export const PROP_COLOURS = {
   n: '#55688a', // glass
   o: '#8a5a3c', // timber
 };
+
+// The same colours put under whatever light is on. A bench and a bin have to
+// go dark at night alongside the buildings behind them, and washing one fixed
+// palette is far less to keep in step than writing out three.
+export function propPalette(time = timeOfDay()) {
+  const out = {};
+  for (const [key, hex] of Object.entries(BASE_COLOURS)) out[key] = underLight(hex, time);
+  // Lamplight is a light source rather than a lit surface, so it keeps its own
+  // colour and only dims when the lamps are off.
+  out.l = time.lampGlow > 0.4 ? BASE_COLOURS.l : underLight(BASE_COLOURS.l, time);
+  return out;
+}
+
+// Kept for the offline sheet renderer, which has no notion of a time of day.
+export const PROP_COLOURS = BASE_COLOURS;
 
 // Real dimensions, in metres. Everything else in this file is derived from
 // these, so changing a size here changes the sprite and nothing else.

@@ -11,6 +11,20 @@
 
 import { TUNABLES, PRESETS, tunableValue, setTunable, tunableActive } from '../physics/tunables.js';
 import { terminalSpeed, swingPeriod } from '../physics/metrics.js';
+import { textCanvas } from '../render/pixel/font.js';
+
+// The lab keeps real inputs, because a slider has to be draggable and reachable
+// by keyboard and a canvas is neither. Only the text is painted, which is the
+// part that was breaking the look.
+const LABEL_SCALE = 2;
+const INK = '#e8eeff';
+const DIM = '#8792b5';
+const ACCENT = '#4de2ff';
+
+// Swaps an element's contents for the same words in bitmap type.
+function pixelate(el, text, colour = DIM, scale = LABEL_SCALE) {
+  el.replaceChildren(textCanvas(String(text), scale, colour));
+}
 
 // The rope length the panel quotes a period for. A round number, so the figure
 // is comparable as you drag gravity around rather than drifting with his swing.
@@ -19,7 +33,7 @@ const SAMPLE_ROPE = 20; // metres
 export function createControls(root, state, onReset) {
   const rows = [];
 
-  root.append(presetBar(state, () => refresh()), ...groups(state, rows, () => refresh()));
+  root.append(header(), presetBar(state, () => refresh()), ...groups(state, rows, () => refresh()));
   root.append(derived(state, rows), resetButton(onReset));
 
   function refresh() {
@@ -35,6 +49,23 @@ export function createControls(root, state, onReset) {
   };
 }
 
+// The panel's own title. Built here rather than in the markup so it is bitmap
+// type like everything else, instead of being the one line of smooth text left
+// on the screen.
+function header() {
+  const box = document.createElement('div');
+  box.className = 'labHeader';
+
+  const title = document.createElement('h1');
+  pixelate(title, 'Lab', ACCENT, 3);
+
+  const note = document.createElement('p');
+  pixelate(note, 'applied now', DIM, 2);
+
+  box.append(title, note);
+  return box;
+}
+
 // Whole worlds, one click each.
 function presetBar(state, changed) {
   const bar = document.createElement('div');
@@ -43,7 +74,7 @@ function presetBar(state, changed) {
   for (const preset of PRESETS) {
     const button = document.createElement('button');
     button.className = 'preset';
-    button.textContent = preset.name;
+    pixelate(button, preset.name);
     button.addEventListener('click', () => {
       for (const [key, value] of Object.entries(preset.values)) {
         const tunable = TUNABLES.find((t) => t.key === key);
@@ -66,7 +97,7 @@ function groups(state, rows, changed) {
       current = tunable.group;
       const heading = document.createElement('h2');
       heading.className = 'group';
-      heading.textContent = current;
+      pixelate(heading, current, ACCENT);
       out.push(heading);
     }
 
@@ -85,7 +116,7 @@ function buildRow(state, tunable, changed) {
 
   const label = document.createElement('label');
   label.className = 'label';
-  label.textContent = tunable.label;
+  pixelate(label, tunable.label);
 
   const readout = document.createElement('span');
   readout.className = 'value';
@@ -108,13 +139,13 @@ function buildRow(state, tunable, changed) {
       el.classList.toggle('inactive', !active);
       if (tunable.kind === 'switch') {
         input.checked = Boolean(value);
-        readout.textContent = value ? 'on' : 'off';
+        pixelate(readout, value ? 'on' : 'off', INK);
       } else if (tunable.kind === 'choice') {
         input.value = value;
-        readout.textContent = '';
+        readout.replaceChildren();
       } else {
         input.value = String(value);
-        readout.textContent = format(value, tunable);
+        pixelate(readout, format(value, tunable), INK);
       }
     },
   };
@@ -180,7 +211,7 @@ function derived(state, rows) {
 
   const heading = document.createElement('h2');
   heading.className = 'group';
-  heading.textContent = 'That means';
+  pixelate(heading, 'That means', ACCENT);
 
   const terminal = line('Terminal speed', 'm/s');
   const weight = line('Weight', 'N');
@@ -210,23 +241,23 @@ function line(name, unit) {
 
   const label = document.createElement('span');
   label.className = 'label';
-  label.textContent = name;
+  pixelate(label, name);
 
   const value = document.createElement('span');
   value.className = 'value';
 
   const units = document.createElement('span');
   units.className = 'unit';
-  units.textContent = unit;
+  pixelate(units, unit, DIM);
 
   el.append(label, value, units);
-  return { el, set: (text) => { value.textContent = text; } };
+  return { el, set: (text) => pixelate(value, text, INK) };
 }
 
 function resetButton(onReset) {
   const button = document.createElement('button');
   button.className = 'preset wide';
-  button.textContent = 'Back to the real numbers';
+  pixelate(button, 'Back to real');
   button.addEventListener('click', onReset);
   return button;
 }

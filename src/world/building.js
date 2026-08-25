@@ -11,10 +11,14 @@
 // not anything has ever been drawn.
 
 import { chance, range } from './random.js';
-import { SHAPES } from '../render/pixel/facade.js';
+import { SHAPES, roofLedges } from '../render/pixel/facade.js';
+import { cells } from '../render/pixel/grid.js';
 
 const ROOF_ANCHOR_STEP = 12; // metres between anchors along a rooftop
 const ROOF_ANCHOR_INSET = 2.5;
+// A terrace narrower than this is a moulding, not somewhere to put a web. The
+// apex is exempt, since a spire has nothing wider anywhere on it.
+const NARROWEST_LEDGE = 2; // metres
 
 export function makeBuilding(rng, layer, x, width, height, ground) {
   // Its own facade colour, drawn once at generation so the same building is
@@ -25,6 +29,7 @@ export function makeBuilding(rng, layer, x, width, height, ground) {
   // What sort of building it is follows from how tall it is, which is how it
   // works in a real city. Nobody builds a two storey shop ninety metres high.
   const kind = height >= layer.towerAbove ? 'tower' : 'block';
+  const shape = kind === 'tower' ? SHAPES[Math.floor(rng() * SHAPES.length)] : null;
 
   return {
     x,
@@ -32,7 +37,7 @@ export function makeBuilding(rng, layer, x, width, height, ground) {
     height,
     face,
     kind,
-    shape: kind === 'tower' ? SHAPES[Math.floor(rng() * SHAPES.length)] : null,
+    shape,
     texture: kind === 'block' && chance(rng, 0.7) ? 'brick' : 'render',
     escape: chance(rng, 0.55),
     // Its own stream of randomness, so the window pattern is stable across
@@ -41,22 +46,39 @@ export function makeBuilding(rng, layer, x, width, height, ground) {
     // Filled in by the renderer the first time it is drawn, and dropped again
     // when the chunk is pruned.
     sprite: null,
-    anchors: layer.anchors ? makeRoofAnchors(x, width, height, ground) : [],
+    anchors: layer.anchors ? makeRoofAnchors(kind, shape, x, width, height, ground) : [],
   };
 }
 
 // Rooftops are the only places a web can stick. The buildings themselves are
 // scenery he swings past, so nothing lower down needs an anchor.
-function makeRoofAnchors(x, width, height, ground) {
-  const roof = ground + height;
+//
+// Anchors follow the silhouette the renderer will actually draw, so a ziggurat
+// offers every terrace and a spire offers only its apex. Laying them in a
+// straight line across the top, as this used to, put anchors on empty sky
+// wherever a building was not a plain box.
+function makeRoofAnchors(kind, shape, x, width, height, ground) {
+  const cols = cells(width);
+  const rows = cells(height);
   const anchors = [];
 
-  for (let ax = x + ROOF_ANCHOR_INSET; ax <= x + width - ROOF_ANCHOR_INSET; ax += ROOF_ANCHOR_STEP) {
-    anchors.push({ x: ax, y: roof });
+  for (const ledge of roofLedges({ kind, shape, cols, rows })) {
+    // Grid rows count down from the top of the building, so a row near zero is
+    // near the roof.
+    const y = ground + height * (1 - ledge.row / rows);
+    const left = x + width * (ledge.from / cols);
+    const right = x + width * (ledge.to / cols);
+    if (!ledge.apex && right - left < NARROWEST_LEDGE) continue;
+
+    const inset = Math.min(ROOF_ANCHOR_INSET, (right - left) / 3);
+
+    for (let ax = left + inset; ax <= right - inset; ax += ROOF_ANCHOR_STEP) {
+      anchors.push({ x: ax, y });
+    }
+    // Always keep the far corner, otherwise wide roofs lose their best anchor
+    // to the step size.
+    anchors.push({ x: right - inset, y });
   }
-  // Always keep the far corner, otherwise wide buildings lose their best anchor
-  // to the step size.
-  anchors.push({ x: x + width - ROOF_ANCHOR_INSET, y: roof });
 
   return anchors;
 }

@@ -17,29 +17,35 @@
 // hundred and twenty metres tall and you read it as a silhouette.
 
 import { createGrid, CLEAR, CELL, cells } from './grid.js';
-import { darken, lighten } from '../../world/palette.js';
+import { timeOfDay, mix } from '../../world/daylight.js';
 
 export { CELL, cells };
 
-// Eight tones, the same count the sprite is drawn with. Six come from the
-// building's own colour so every facade lights the same way, and the two glass
-// tones are shared, because a window is the sky and a lamp, not the wall.
-export function facadePalette(face) {
+// Nine tones, six of them mixed from the building's own colour so every facade
+// lights the same way, and three sheets of glass, because a window is the sky
+// and a lamp rather than the wall.
+//
+// Both ends of the mix come from the time of day, which is what makes a whole
+// city change hour without a single colour being written out three times.
+export function facadePalette(face, time = timeOfDay()) {
+  const dark = (amount) => mix(face, time.shadow, amount);
+  const light = (amount) => mix(face, time.sunlight, amount);
+
   return {
-    a: darken(face, 0.84), // outline and the darkest lines
-    b: darken(face, 0.52), // joinery, recesses, the plinth
-    c: darken(face, 0.24), // the side the sun has left, spandrels
-    d: face,
-    e: lighten(face, 0.44), // trim, sills, storey bands
-    f: lighten(face, 0.78), // cornice highlight
+    a: dark(0.84), // outline and the darkest lines
+    b: dark(0.52), // joinery, recesses, the plinth
+    c: dark(0.24), // the side the sun has left, spandrels
+    d: mix(face, time.wash, time.washAmount * 0.5),
+    e: light(0.44), // trim, sills, storey bands
+    f: light(0.78), // cornice highlight
     // Both glass tones sit clearly darker than the trim, or a lit window turns
     // into a solid cream slab with no pane inside it at all.
-    g: '#55688a', // glass with the dusk sky in it
-    h: '#f0ac4e', // glass with a lamp behind it
+    g: time.glass,
+    h: time.litGlass,
     // The ninth. A curtain wall is a mirror, and the one thing that stops a
     // hundred metres of it reading as graph paper is the band of brighter sky
     // sliding diagonally across it.
-    i: '#8fa6c8', // glass catching the sun off to the west
+    i: time.sheen,
   };
 }
 
@@ -66,6 +72,11 @@ const ARCH = {
   9: [3, 2, 1, 0],
   10: [3, 2, 1, 0],
 };
+
+// A shop keeps its lights on later than an office and opens before one, so it
+// never goes fully dark. Without this the terrace at noon is a row of blank
+// windows and the street looks abandoned.
+const shopLit = () => Math.max(timeOfDay().lit, 0.45);
 
 const CORNICE = 5; // rows a shop cap takes, including its dentils and shadow
 const PLINTH = 3; // rows of stonework at street level
@@ -178,7 +189,7 @@ function block({ cols, rows, texture = 'brick', escape = true, rng = () => 0.5 }
 
     for (let i = 0; i < bays.count; i += 1) {
       const x = bays.start + i * (bays.width + bays.gap);
-      window(g, x, y, bays.width, h, rng() < 0.45, false);
+      window(g, x, y, bays.width, h, rng() < timeOfDay().lit, false);
     }
   }
 
@@ -223,6 +234,44 @@ const SHAPES = ['setback', 'deco', 'spire', 'chamfer', 'slab'];
 
 export { SHAPES };
 
+// The flat surfaces on top of a building, in grid rows and columns.
+//
+// This exists because the towers grew setbacks, spires and cut corners while
+// the anchors were still a straight line across the full width at full height.
+// On a spire that put a web on thin air ten metres out from the stonework, and
+// on a ziggurat it ignored five perfectly good terraces.
+//
+// A ledge is anywhere the silhouette gets wider as you go down. Reading it off
+// the same `insetAt` the renderer draws with means the two can never disagree,
+// which matters more here than anywhere else in the project: this is the one
+// piece of art the physics actually touches.
+export function roofLedges({ kind, shape, cols, rows }) {
+  // Everything but a tower is a flat roof across its whole width.
+  if (kind !== 'tower') return [{ row: 0, from: 0, to: cols }];
+
+  const form = silhouette(shape, cols, rows);
+  const top = form.insetAt(form.top);
+  // The apex always counts, however narrow it is. A spire tapers to two cells
+  // and produces no other flat surface at all, so without this the tallest
+  // thing on the skyline would be the one building you cannot web.
+  const ledges = [{ row: form.top, from: top, to: cols - top, apex: true }];
+
+  // A step has to be deep enough to stand on. Without this the spire's smooth
+  // taper reads as several hundred one cell ledges all the way down.
+  const minimum = cells(1.2);
+
+  for (let y = form.top + 1; y < form.lobbyTop; y += 1) {
+    const above = form.insetAt(y - 1);
+    const here = form.insetAt(y);
+    if (above - here < minimum) continue;
+
+    ledges.push({ row: y, from: here, to: above });
+    ledges.push({ row: y, from: cols - above, to: cols - here });
+  }
+
+  return ledges;
+}
+
 function tower({ cols, rows, shape = 'setback', rng = () => 0.5 }) {
   const g = createGrid(cols, rows, CLEAR);
   const form = silhouette(shape, cols, rows);
@@ -246,7 +295,10 @@ function tower({ cols, rows, shape = 'setback', rng = () => 0.5 }) {
 // How much to pull each row in from both sides. Everything about a tower's
 // character lives in this one function.
 function silhouette(shape, cols, rows) {
-  const step = Math.max(cells(1.5), 2);
+  // How far each setback pulls in. Deep enough to be a terrace somebody could
+  // stand on rather than a moulding, because the anchors are read off this and
+  // a ledge a metre and a half deep is not somewhere to put a web.
+  const step = Math.max(cells(2.4), 2);
   const limit = Math.floor(cols / 2) - 3;
   const clamp = (inset) => Math.max(Math.min(inset, limit), 0);
   const base = { cols, rows, shape, lobbyTop: rows - cells(9), top: 0 };
@@ -337,7 +389,7 @@ function curtainWall(g, form, rng) {
     for (let x = first; x + glass <= cols; x += pitch) {
       if (x < inset + pier || x + glass > cols - inset - pier) continue;
 
-      const lit = rng() < (busy ? 0.78 : 0.12);
+      const lit = rng() < (busy ? Math.min(timeOfDay().lit * 1.9, 0.95) : timeOfDay().lit * 0.3);
       g.fill(x, y, glass, winH, lit ? 'h' : sheenAt(x, y) ? 'i' : 'g');
 
       // Mullions down the bay and a transom across the head of it. Without
@@ -525,7 +577,7 @@ function upperStorey(g, y, h, rng) {
 
   for (let i = 0; i < bays.count; i += 1) {
     const x = bays.start + i * (bays.width + bays.gap);
-    window(g, x, y + 2, bays.width, winH, rng() < 0.45, true);
+    window(g, x, y + 2, bays.width, winH, rng() < timeOfDay().lit, true);
   }
 
   // The storey band, which is what stops two floors reading as one tall wall.
@@ -557,7 +609,7 @@ function shopfront(g, y, h, rng) {
       continue;
     }
 
-    window(g, x, top, bays.width, height, rng() < 0.6, false);
+    window(g, x, top, bays.width, height, rng() < shopLit(), false);
     glazingBars(g, x, top, bays.width, height);
   }
 }
@@ -575,7 +627,7 @@ function groundFloor(g, y, h, rng) {
   for (let i = 0; i < bays.count; i += 1) {
     const x = bays.start + i * (bays.width + bays.gap);
     if (i === doorBay) door(g, x, top, bays.width, height + 3, rng);
-    else window(g, x, top, bays.width, height, rng() < 0.5, false);
+    else window(g, x, top, bays.width, height, rng() < timeOfDay().lit, false);
   }
 }
 

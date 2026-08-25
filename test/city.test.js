@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { mulberry32, hashInts } from '../src/world/random.js';
+import { roofLedges } from '../src/render/pixel/facade.js';
+import { cells } from '../src/render/pixel/grid.js';
 import { vec } from '../src/physics/vec.js';
 import { createWorld, step } from '../src/physics/world.js';
 import {
@@ -99,8 +101,10 @@ test('aiming never returns a street level anchor', () => {
     const from = { x, y: 24 };
     const picked = pickAnchor(city, from, { x: x + 40, y: 6 }, 120, 0, 20);
 
-    // Every real building starts at 52 m, so anything lower came from scenery.
-    if (picked) assert.ok(picked.y >= 52, `picked something ${picked.y.toFixed(0)} m up`);
+    // Shops top out around twenty metres, so anything below thirty came from
+    // scenery. Not 52 any more: a setback terrace on the shortest tower in the
+    // city sits at 51.6, just under where the buildings themselves start.
+    if (picked) assert.ok(picked.y > 30, `picked something ${picked.y.toFixed(0)} m up`);
   }
 });
 
@@ -124,15 +128,61 @@ test('shopfronts sit in a terrace with no gaps and no overlaps', () => {
   }
 });
 
-test('every anchor sits on the roof of the building it belongs to', () => {
+// Anchors used to be a straight line across the top at full height, which was
+// right only while every building was a box. Now a tower has setbacks, a cut
+// corner or a taper, so an anchor has to sit on a surface that shape actually
+// has, and this checks it against the same silhouette the renderer draws from.
+test('every anchor sits on a real ledge of the building it belongs to', () => {
   const buildings = buildingsBetween(createCity(13), NEAR_LAYER, 0, 3000);
+  let towersChecked = 0;
 
   for (const b of buildings) {
+    const rows = cells(b.height);
+    const cols = cells(b.width);
+    const ledges = roofLedges({ kind: b.kind, shape: b.shape, cols, rows });
+
+    // Heights the silhouette actually offers, in metres above the ground.
+    const surfaces = ledges.map((l) => b.height * (1 - l.row / rows));
+    if (b.kind === 'tower') towersChecked += 1;
+
     for (const a of b.anchors) {
-      assert.ok(a.x >= b.x - 1e-9 && a.x <= b.x + b.width + 1e-9);
-      assert.equal(a.y, b.height);
+      assert.ok(a.x >= b.x - 1e-9 && a.x <= b.x + b.width + 1e-9, 'anchor is off the side');
+      assert.ok(a.y <= b.height + 1e-9, 'anchor is above the roof');
+      assert.ok(
+        surfaces.some((h) => Math.abs(h - a.y) < 1e-9),
+        `anchor at ${a.y.toFixed(1)} m is on no ledge of a ${b.height.toFixed(0)} m ${b.shape || b.kind}`,
+      );
     }
   }
+
+  assert.ok(towersChecked > 5, 'not enough towers in this stretch to be meaningful');
+});
+
+// A shape with nowhere flat on it is still somewhere you have to be able to
+// swing from, or the tallest thing on the skyline becomes the one building you
+// cannot use.
+test('every building offers at least one anchor, spires included', () => {
+  const buildings = buildingsBetween(createCity(9), NEAR_LAYER, 0, 4000);
+  const shapes = new Set();
+
+  for (const b of buildings) {
+    assert.ok(b.anchors.length > 0, `a ${b.height.toFixed(0)} m ${b.shape || b.kind} has none`);
+    if (b.shape) shapes.add(b.shape);
+  }
+
+  assert.ok(shapes.has('spire'), 'no spire in this stretch, so the case is untested');
+  assert.equal(shapes.size, 5, 'every tower shape should turn up over four kilometres');
+});
+
+// A ziggurat should hand you far more to aim at than a plain slab, which is the
+// whole reason for reading the ledges off the silhouette.
+test('a stepped tower offers more anchors than a flat topped one', () => {
+  const buildings = buildingsBetween(createCity(9), NEAR_LAYER, 0, 4000);
+  const most = (shape) =>
+    Math.max(...buildings.filter((b) => b.shape === shape).map((b) => b.anchors.length));
+
+  assert.ok(most('deco') > most('slab'), 'a ziggurat should carry terraces');
+  assert.ok(most('setback') > most('slab'), 'setbacks should carry terraces');
 });
 
 test('the hero passes straight through buildings', () => {

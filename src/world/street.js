@@ -17,6 +17,7 @@
 
 import { mulberry32, hashInts, range, chance } from './random.js';
 import { PROP_SIZES } from '../render/pixel/props.js';
+import { STOREY } from '../render/pixel/facade.js';
 
 // Heights are metres above the ground line, so the pavement and the road are
 // both negative. The hero lands on the ground line itself, at the back of the
@@ -82,19 +83,43 @@ export function generateStreetChunk(seed, chunkIndex, chunkWidth, ground) {
   return { shops, props };
 }
 
+// How tall the terrace stands.
+//
+// Taller than it was, and the reason is the trees in front of it. Street
+// furniture is drawn at twice life so it reads next to a hero who is drawn at
+// four times, which puts a mature oak at twenty three metres. A terrace topping
+// out at twenty was being overtopped by its own planting, and a street where the
+// trees are taller than the buildings reads as a park with shopfronts in it.
+//
+// So the frontage starts above the tallest thing that can stand in front of it.
+const TERRACE = { short: [26, 32], tall: [34, 46] };
+
+// How many floors fit in a given height, from the real storey heights the
+// facade builder draws with. A shop gives its ground floor over to a tall
+// shopfront; a house does not.
+function storeysIn(height, kind) {
+  const ground = kind === 'shop' ? STOREY.shopfront : STOREY.shop;
+  return Math.max(Math.round((height - ground) / STOREY.shop), 2);
+}
+
 function makeShop(rng, x, width) {
   const tall = chance(rng, 0.35);
   // A terrace is shops with a couple of houses mixed into it, which is what
   // stops a hundred metres of frontage reading as one long parade.
   const kind = chance(rng, 0.76) ? 'shop' : 'townhouse';
+  const band = tall ? TERRACE.tall : TERRACE.short;
+  const height = range(rng, band[0], band[1]);
 
   return {
     x,
     width,
-    height: tall ? range(rng, 15, 20) : range(rng, 11.5, 15),
+    height,
     face: FACES[Math.floor(rng() * FACES.length)],
     kind,
-    floors: tall ? 3 : 2,
+    // Follows from the height rather than being picked alongside it. A fixed
+    // two or three floors over a building twice as tall as it used to be gives
+    // storeys seven metres high, and the windows come out as doors.
+    floors: storeysIn(height, kind),
     texture: chance(rng, 0.45) ? 'brick' : 'render',
     // Awnings are what give the reference its stripe of colour at eye level.
     // They are drawn over the sprite rather than into it, because they hang off

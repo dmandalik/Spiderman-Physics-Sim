@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { mulberry32, hashInts } from '../src/world/random.js';
-import { roofLedges } from '../src/render/pixel/facade.js';
+import { roofLedges, STOREY } from '../src/render/pixel/facade.js';
+import { drawnSize, PROP_KINDS } from '../src/render/pixel/props.js';
 import { cells } from '../src/render/pixel/grid.js';
 import { vec } from '../src/physics/vec.js';
 import { createWorld, step } from '../src/physics/world.js';
@@ -90,6 +91,40 @@ test('nothing at street level can be webbed', () => {
     for (const thing of [...shops, ...props]) {
       assert.equal(thing.anchors, undefined, `${thing.kind || 'shop'} carries anchors`);
     }
+  }
+});
+
+// A street where the planting is taller than the buildings reads as a park with
+// shopfronts in it. This is the one relationship in the scene that has to hold,
+// and it is easy to break from either end: the trees grew when the street was
+// given its own render scale, and the terrace had to grow to stay over them.
+test('the terrace stands taller than anything planted in front of it', () => {
+  const trees = ['plane', 'oak', 'conifer', 'sapling'];
+  const tallest = Math.max(...trees.map((kind) => drawnSize(kind).height));
+  const { shops } = streetBetween(createCity(20250806), 0, 3000);
+
+  assert.ok(shops.length > 10, `only ${shops.length} shops to judge`);
+  const shortest = Math.min(...shops.map((shop) => shop.height));
+
+  assert.ok(
+    shortest > tallest,
+    `the shortest frontage is ${shortest.toFixed(1)} m and an oak is ${tallest.toFixed(1)}`,
+  );
+});
+
+// Floors follow from the height, so a taller terrace has more of them rather
+// than the same few stretched. Without this the windows come out as doors.
+test('a shopfront storey stays the height of a storey', () => {
+  const { shops } = streetBetween(createCity(77), 0, 3000);
+
+  for (const shop of shops) {
+    // The ground floor is worth about one and a half of the others, which is
+    // the same split the facade builder lays out with.
+    const storey = shop.height / (shop.floors + 1.45);
+    assert.ok(
+      storey > 2.4 && storey < STOREY.office + 1,
+      `${shop.kind} is ${shop.height.toFixed(1)} m over ${shop.floors} floors, ${storey.toFixed(1)} m each`,
+    );
   }
 });
 

@@ -22,8 +22,13 @@ const DIM = '#8792b5';
 const ACCENT = '#4de2ff';
 
 // Swaps an element's contents for the same words in bitmap type.
+//
+// A canvas has no text in it, so anything that was carrying its name as text
+// loses it. The label goes back on as an aria-label, or the preset buttons are
+// six identically unnamed controls to anything that is not a pair of eyes.
 function pixelate(el, text, colour = DIM, scale = LABEL_SCALE) {
   el.replaceChildren(textCanvas(String(text), scale, colour));
+  el.setAttribute('aria-label', String(text));
 }
 
 // The rope length the panel quotes a period for. A round number, so the figure
@@ -128,6 +133,9 @@ function buildRow(state, tunable, changed) {
       : sliderInput(state, tunable, changed);
 
   label.htmlFor = input.id;
+  // The label's own text is a canvas now, so the input is named directly.
+  input.setAttribute('aria-label', tunable.label);
+  if (tunable.note) input.title = tunable.note;
   el.append(label, readout, input);
 
   return {

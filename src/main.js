@@ -13,6 +13,7 @@ import { createControls } from './ui/controls.js';
 import { createTimeButton } from './ui/timeButton.js';
 import { createTitle, createHints } from './ui/chrome.js';
 import { labDefaults } from './physics/tunables.js';
+import { loadAgent, createPilot } from './ml/agent.js';
 import { createStage } from './render/three/stage.js';
 import { createCharacter } from './render/three/character.js';
 
@@ -83,7 +84,35 @@ createHints(document.querySelector('.hints'), [
   { keys: ['L'], text: 'lab' },
   { keys: ['H'], text: 'hide' },
   { keys: ['R'], text: 'reset' },
+  { keys: ['A'], text: 'agent' },
 ]);
+
+// The trained agent, once it has been asked for. Null until then, so a build
+// with no agent.json beside it still runs exactly as before.
+let pilot = null;
+let agent = null;
+
+// Hands the controls to the policy, or takes them back.
+//
+// Heroic mode, because that is the only world it was trained in. Switching it on
+// anywhere else would be watching an agent fly a world it has never seen and
+// concluding something about it.
+async function toggleAgent() {
+  if (pilot) {
+    pilot = null;
+    return;
+  }
+
+  try {
+    agent = agent || await loadAgent();
+  } catch (error) {
+    console.warn('no trained agent to watch', error);
+    return;
+  }
+
+  setMode('heroic');
+  pilot = createPilot(agent, world, city, assistSettings());
+}
 
 const trail = [];
 let trailClock = 0;
@@ -156,6 +185,17 @@ function aimedAnchor() {
   return pickAnchor(city, world.hero.pos, target, range, world.ground, world.hero.vel.x);
 }
 
+// Where the marker goes: the agent's aim when it is flying, the cursor when you
+// are. One function so the two can never be drawn differently.
+function agentOrPointerAnchor() {
+  if (!pilot) return aimedAnchor();
+  const target = pilot.target;
+  if (!target) return null;
+  const settings = assistSettings();
+  const range = settings.enabled ? assistReach(world.params, settings) : world.params.maxWebRange;
+  return pickAnchor(city, world.hero.pos, target, range, world.ground, world.hero.vel.x);
+}
+
 function shootWeb() {
   const anchor = aimedAnchor();
   if (anchor) attachWeb(world, anchor);
@@ -183,6 +223,7 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'KeyM') setMode(MODES[(MODES.indexOf(mode) + 1) % MODES.length]);
   if (e.code === 'KeyL') setMode(mode === 'lab' ? 'real' : 'lab');
   if (e.code === 'KeyH') hud.toggle();
+  if (e.code === 'KeyA') toggleAgent();
   if (e.code === 'Space') {
     e.preventDefault();
     world.web.attached ? releaseWeb(world) : shootWeb();
@@ -228,11 +269,18 @@ function frame(now) {
   const frameTime = (now - lastFrame) / 1000;
   lastFrame = now;
 
+  // The agent presses the buttons; the loop below is untouched by it. Driving
+  // it on simulated time rather than on frame time keeps its twenty decisions a
+  // second true whatever the display is doing, and true through the heroic time
+  // scale as well.
+  if (pilot) pilot.update(frameTime * world.params.timeScale);
+
   const { alpha } = advance(frameTime * world.params.timeScale, (dt) => {
     // Reeling by hand always wins, so the assist never fights the player.
     const settings = assistSettings();
+    const reel = pilot ? pilot.reel : reelDirection;
     world.applied = settings.enabled ? assistForce(world, settings) : ZERO;
-    reelWeb(world, reelDirection || (settings.enabled ? assistReel(world, settings) : 0), dt);
+    reelWeb(world, reel || (settings.enabled ? assistReel(world, settings) : 0), dt);
     step(world, dt);
 
     trailClock += dt;
@@ -258,7 +306,7 @@ function frame(now) {
     heroPos,
     trail,
     dt,
-    aimAnchor: world.web.attached ? null : aimedAnchor(),
+    aimAnchor: world.web.attached ? null : agentOrPointerAnchor(),
   });
 
   if (stage && character) {

@@ -44,6 +44,44 @@ test('every pose puts its wrist and centre of mass inside its own grid', () => {
   }
 });
 
+// The whole figure is drawn with one line weight. This is stated as two
+// separate faults because they look different on screen and came from different
+// causes: a gap in the keyline shows as the red of the suit bleeding into the
+// sky, and a doubled one shows as the blobby black mass the swing poses used to
+// carry around their heads.
+test('every pose carries a complete keyline exactly one cell thick', () => {
+  const OUTLINE = 'a';
+  const CLEAR = '.';
+  const AROUND = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
+
+  for (const [name, pose] of Object.entries(POSES)) {
+    const grid = pose.grid;
+    const at = (x, y) => (y < 0 || y >= grid.length || x < 0 || x >= grid[0].length ? CLEAR : grid[y][x]);
+    const coloured = (x, y) => {
+      const key = at(x, y);
+      return key !== CLEAR && key !== OUTLINE;
+    };
+
+    for (let y = 0; y < grid.length; y += 1) {
+      for (let x = 0; x < grid[0].length; x += 1) {
+        const key = at(x, y);
+        const touches = AROUND.some(([dx, dy]) => coloured(x + dx, y + dy));
+
+        if (coloured(x, y)) {
+          // Orthogonal only. A shape that meets air on the diagonal is a
+          // staircase, and a keyline round the outside of every step of one
+          // reads as a thicker line, not a cleaner drawing.
+          for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+            assert.notEqual(at(x + dx, y + dy), CLEAR, `${name} has bare suit at ${x},${y}`);
+          }
+        } else if (key === OUTLINE) {
+          assert.ok(touches, `${name} has keyline at ${x},${y} touching nothing`);
+        }
+      }
+    }
+  }
+});
+
 test('no web means free flight, whatever he is doing', () => {
   assert.equal(selectPose({ web: free, vel: { x: 30, y: -20 }, time: 5 }), 'freeFlight');
   assert.equal(selectPose({ web: free, vel: still, time: 0 }), 'freeFlight');

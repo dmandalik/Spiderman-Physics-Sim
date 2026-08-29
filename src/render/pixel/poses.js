@@ -356,9 +356,74 @@ const freeFlight = [
   '...........aaaa................',
 ];
 
+// ---------------------------------------------------------------- the keyline
+
+// The outline key. Also used for line work inside the drawing, which is why
+// tidying it needs a rule rather than a search and replace.
+const OUTLINE = 'a';
+const CLEAR = '.';
+const AROUND = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
+
+// One keyline rule for every pose, derived rather than drawn.
+//
+// The two traced poses came off the reference with a clean single cell outline.
+// The five swing poses were built separately and theirs runs two and three cells
+// thick in places and stops altogether in others, which is what makes them read
+// as a different, blobbier character: fifty odd cells of stray black on each,
+// mostly piled around the head.
+//
+// Two passes, and the order matters. Strip every outline cell more than one away
+// from any coloured cell, which takes the second and third layers off and leaves
+// the line work inside the suit alone because every cell of that touches red.
+// Then put exactly one cell back wherever the drawing meets air. Both passes ask
+// only about coloured neighbours, and neither pass writes a coloured cell, so
+// they cannot interfere with each other.
+//
+// Padded by one first, because several of these run right off the edge of their
+// own grid and a keyline needs somewhere to go. `com` and `wrist` move with the
+// padding and `scaleRows` is pinned to the grid it was measured against, so the
+// figure is drawn at exactly the size and position it was before.
+function keylined(entry) {
+  const source = entry.grid;
+  const cols = source[0].length + 2;
+  const rows = source.length + 2;
+
+  const cells = Array.from({ length: rows }, () => new Array(cols).fill(CLEAR));
+  for (let y = 0; y < source.length; y += 1) {
+    for (let x = 0; x < source[y].length; x += 1) cells[y + 1][x + 1] = source[y][x];
+  }
+
+  const at = (x, y) => (x < 0 || y < 0 || x >= cols || y >= rows ? CLEAR : cells[y][x]);
+  const coloured = (x, y) => {
+    const key = at(x, y);
+    return key !== CLEAR && key !== OUTLINE;
+  };
+  const touchesDrawing = (x, y) => AROUND.some(([dx, dy]) => coloured(x + dx, y + dy));
+
+  for (let y = 0; y < rows; y += 1) {
+    for (let x = 0; x < cols; x += 1) {
+      if (cells[y][x] === OUTLINE && !touchesDrawing(x, y)) cells[y][x] = CLEAR;
+    }
+  }
+
+  for (let y = 0; y < rows; y += 1) {
+    for (let x = 0; x < cols; x += 1) {
+      if (cells[y][x] === CLEAR && touchesDrawing(x, y)) cells[y][x] = OUTLINE;
+    }
+  }
+
+  return {
+    ...entry,
+    grid: cells.map((row) => row.join('')),
+    com: { col: entry.com.col + 1, row: entry.com.row + 1 },
+    wrist: { col: entry.wrist.col + 1, row: entry.wrist.row + 1 },
+    scaleRows: entry.scaleRows ?? source.length,
+  };
+}
+
 // `com` is where the point mass the physics simulates lands inside the drawing.
 // `wrist` is where the web line ends, so it always leaves his glove.
-export const POSES = {
+const DRAWN = {
   webbing: { grid: webbing, com: { col: 14.5, row: 29.1 }, wrist: { col: 22.5, row: 0.5 }, scaleRows: 46 },
   downSwing: { grid: downSwing, com: { col: 24, row: 27.3 }, wrist: { col: 46, row: 0.5 }, tilt: -0.65, scaleRows: 46 },
   bottomSwing: { grid: bottomSwing, com: { col: 10.5, row: 26.7 }, wrist: { col: 14, row: 0.5 }, scaleRows: 46 },
@@ -367,3 +432,7 @@ export const POSES = {
   perch: { grid: perch, com: { col: 10, row: 17.6 }, wrist: { col: 18.5, row: 28 } },
   neutral: { grid: neutral, com: { col: 16, row: 26 }, wrist: { col: 5, row: 5 } },
 };
+
+export const POSES = Object.fromEntries(
+  Object.entries(DRAWN).map(([name, entry]) => [name, keylined(entry)]),
+);

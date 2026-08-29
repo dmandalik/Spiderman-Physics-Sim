@@ -11,7 +11,7 @@ import { worldToScreen } from './camera.js';
 import { streetBetween } from '../world/city.js';
 import { STREET } from '../world/street.js';
 import { buildFacade, facadePalette, shopfrontRow } from './pixel/facade.js';
-import { buildProp, propPalette, PROP_SIZES } from './pixel/props.js';
+import { buildProp, propPalette, drawnSize } from './pixel/props.js';
 import { cells } from './pixel/grid.js';
 import { createSprite, drawSprite, ifAffordable } from './pixel/sprite.js';
 import { mulberry32 } from '../world/random.js';
@@ -157,7 +157,9 @@ function drawAwning(ctx, camera, shop, ground, left, width) {
 }
 
 function drawProp(ctx, camera, prop) {
-  const size = PROP_SIZES[prop.kind];
+  // Drawn size, not real size. Street furniture is rendered larger than life so
+  // it sits in the same picture as the hero, who is too.
+  const size = drawnSize(prop.kind);
   const width = size.spread * prop.scale * camera.zoom;
   const height = size.height * prop.scale * camera.zoom;
 

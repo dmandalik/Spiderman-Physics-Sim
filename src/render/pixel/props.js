@@ -77,6 +77,34 @@ export const PROP_SIZES = {
   car: { height: 1.5, spread: 4.4 },
 };
 
+// Drawn bigger than life, the same way the hero is and for the same reason.
+//
+// The figure is a 1.8 m man rendered at 4.4 times life, because at any zoom that
+// still frames a hundred metre tower a real one is a speck. Everything on the
+// pavement was left at true scale, so a car came out a little over half his
+// height and a traffic light barely a third: the two of them were in the same
+// picture at different scales and it showed.
+//
+// Twice life, not the hero's four and a bit. His factor would make a car
+// nineteen metres long, longer than the shop behind it is wide, which trades one
+// scale mistake for a worse one. Twice puts a car at the length he is tall, a
+// traffic light a little over his head, and a street tree at eighteen metres,
+// which is what a plane tree is anyway.
+//
+// One factor for everything on the pavement, so the relationships inside the
+// street are untouched: a bench is still the same fraction of a car as it was.
+// Only the relationship to the buildings moves, and that one was already broken
+// by the figure standing in front of them.
+//
+// The physics never sees this, and neither does PROP_SIZES. Real sizes stay real
+// up there and this is applied once, on the way to being drawn.
+export const STREET_SCALE = 2;
+
+export function drawnSize(kind) {
+  const size = PROP_SIZES[kind];
+  return { spread: size.spread * STREET_SCALE, height: size.height * STREET_SCALE };
+}
+
 // Room around the drawing for the keyline, and for the branches of a tree that
 // reach past its nominal spread.
 //
@@ -89,8 +117,8 @@ const MARGIN = 2;
 const INSET = MARGIN / 2; // cells of it on each side
 
 export function buildProp(kind, rng = () => 0.5) {
-  const size = PROP_SIZES[kind];
-  if (!size) throw new Error(`no such prop ${kind}`);
+  if (!PROP_SIZES[kind]) throw new Error(`no such prop ${kind}`);
+  const size = drawnSize(kind);
 
   const g = createGrid(cells(size.spread) + MARGIN, cells(size.height) + 1, CLEAR);
   const draw = BUILDERS[kind];
@@ -218,15 +246,15 @@ function lamp(g) {
 function signal(g) {
   const cx = Math.floor(g.cols / 2);
   const bottom = g.rows - 1;
-  const head = 5;
+  const head = 7; // hood, three lenses with a row between them, and a foot
 
   g.fill(cx, head, 1, bottom - head, 'b'); // the post
   g.fill(cx - 1, bottom, 3, 1, 'b'); // its foot
 
   g.fill(cx - 1, 0, 3, head, 'b'); // the housing
   g.set(cx, 1, 'i');
-  g.set(cx, 2, 'j');
-  g.set(cx, 3, 'k');
+  g.set(cx, 3, 'j');
+  g.set(cx, 5, 'k');
 }
 
 // An octagon, at the size the plate actually is. Nine hundred millimetres is
@@ -235,32 +263,32 @@ function signal(g) {
 function stop(g) {
   const cx = Math.floor(g.cols / 2);
   const bottom = g.rows - 1;
-  const size = 3;
-  const x = cx - 1;
+  const size = 5;
+  const x = cx - 2;
 
   g.fill(cx, size, 1, bottom - size + 1, 'c'); // the post
 
   g.fill(x, 0, size, size, 'i');
-  g.set(x, 0, CLEAR);
-  g.set(x + size - 1, 0, CLEAR);
-  g.set(x, size - 1, CLEAR);
-  g.set(x + size - 1, size - 1, CLEAR);
+  for (const [dx, dy] of [[0, 0], [size - 1, 0], [0, size - 1], [size - 1, size - 1]]) {
+    g.set(x + dx, dy, CLEAR); // the chamfers, one cell each
+  }
 
-  // The word, suggested rather than written. At three cells across a letter
+  // The word, suggested rather than written. At five cells across a letter
   // would be a fraction of a pixel, so this is a bar and everyone reads it.
-  g.set(x + 1, 1, 'm');
+  g.fill(x + 1, 2, size - 2, 1, 'm');
 }
 
-// Two rows, because a hydrant is eight hundred millimetres and that is what
-// eight hundred millimetres comes to. Bonnet on top, outlets either side.
+// A barrel with a bonnet on it and an outlet out each side, which is the whole
+// of a hydrant at any size worth drawing one.
 function hydrant(g) {
   const cx = Math.floor(g.cols / 2);
   const bottom = g.rows - 1;
+  const top = 1;
 
-  g.fill(cx - 1, bottom - 1, 2, 2, 'i');
-  g.set(cx - 2, bottom, 'i'); // the side outlets
-  g.set(cx + 1, bottom, 'i');
-  g.set(cx - 1, bottom - 1, 'j'); // the lit face of the bonnet
+  g.fill(cx - 1, top, 3, bottom - top + 1, 'i'); // the barrel
+  g.fill(cx - 2, top + 2, 5, 1, 'i'); // the side outlets
+  g.fill(cx - 1, top, 1, bottom - top + 1, 'j'); // lit edge
+  g.set(cx, top, 'j'); // and the top of the bonnet
 }
 
 // Slatted timber on cast iron ends. Eight hundred and fifty millimetres to the
@@ -271,43 +299,52 @@ function bench(g) {
   const w = g.cols - MARGIN;
   const x = INSET;
 
-  // Two rows of one colour is a box, so the back is the ironwork tone and the
-  // seat is timber. At this size the tone change is the only thing carrying it.
-  g.fill(x, bottom - 2, w, 1, 'b'); // the back
+  g.fill(x, bottom - 3, w, 1, 'o'); // the top rail of the back
+  g.fill(x, bottom - 2, w, 1, 'b'); // daylight between the rails, in shadow
   g.fill(x, bottom - 1, w, 1, 'o'); // the seat
-  g.set(x, bottom, 'b'); // the ends, in silhouette
+  g.set(x, bottom, 'b'); // cast iron ends, in silhouette
   g.set(x + w - 1, bottom, 'b');
 }
 
 function bin(g) {
   const cx = Math.floor(g.cols / 2);
   const bottom = g.rows - 1;
+  const top = 1;
 
-  g.fill(cx - 1, bottom - 2, 2, 3, 'c');
-  g.fill(cx - 1, bottom - 2, 2, 1, 'b'); // the lid
+  g.fill(cx - 1, top + 1, 3, bottom - top, 'c');
+  g.fill(cx - 1, top, 3, 1, 'b'); // the lid, overhanging a touch
+  g.fill(cx, top + 2, 1, bottom - top - 2, 'b'); // the one slat there is room for
 }
 
 function postbox(g) {
   const cx = Math.floor(g.cols / 2);
   const bottom = g.rows - 1;
+  const top = 1;
 
-  g.fill(cx - 1, bottom - 3, 2, 4, 'i');
-  g.set(cx - 1, bottom - 3, 'j'); // lit edge of the domed top
-  g.set(cx, bottom - 2, 'a'); // the slot
+  g.fill(cx - 1, top, 3, bottom - top + 1, 'i');
+  g.fill(cx - 1, top, 3, 1, 'j'); // the domed top, catching the light
+  g.fill(cx - 1, top + 2, 3, 1, 'a'); // the slot
 }
 
-// A pole, a flag, and a shelter with a bench in it.
+// A flag, a canopy, and a glazed back with a bench under it.
 function busStop(g) {
   const bottom = g.rows - 1;
   const roof = 1;
   const w = g.cols - MARGIN;
   const x = INSET;
 
-  g.fill(x, roof, w, 1, 'c'); // the roof
-  g.fill(x + 1, roof + 1, w - 2, bottom - roof - 2, 'n'); // the glass back
-  g.fill(x, roof + 1, 1, bottom - roof - 1, 'b'); // the uprights
-  g.fill(x + w - 1, roof + 1, 1, bottom - roof - 1, 'b');
-  g.fill(x + 1, bottom - 1, w - 2, 1, 'o'); // the bench inside
+  g.fill(x, roof, w, 2, 'c'); // the canopy
+  g.fill(x, roof, w, 1, 'b'); // and its front edge, in shadow
+
+  const glassTop = roof + 3;
+  const glassBottom = bottom - 2;
+  g.fill(x + 1, glassTop, w - 2, glassBottom - glassTop, 'n'); // the glass back
+  // Mullions, because one sheet of glass this size reads as a blue rectangle.
+  for (let m = 4; m < w - 2; m += 4) g.fill(x + m, glassTop, 1, glassBottom - glassTop, 'b');
+
+  g.fill(x, roof + 2, 1, bottom - roof - 2, 'b'); // the uprights
+  g.fill(x + w - 1, roof + 2, 1, bottom - roof - 2, 'b');
+  g.fill(x + 2, glassBottom, w - 4, 1, 'o'); // the bench inside
 
   // The flag on the end, so you can tell it from a shop canopy.
   g.fill(x + w - 1, roof - 1, 2, 1, 'i');
@@ -326,20 +363,27 @@ function car(g, rng) {
   const x = INSET;
   const body = rng() < 0.5 ? 'i' : 'n';
 
-  const roof = bottom - 3;
-  const cabX = x + Math.round(w * 0.3);
-  const cabW = Math.max(Math.round(w * 0.4), 3);
+  const roof = 1;
+  const cabX = x + Math.round(w * 0.26);
+  const cabW = Math.max(Math.round(w * 0.46), 3);
 
-  g.fill(cabX, roof, cabW, 1, body); // the cabin, set in for a bonnet and a boot
-  g.fill(cabX + 1, roof, cabW - 2, 1, 'n'); // its glass
-  g.fill(x, roof + 1, w, 2, body); // the body, the whole length
-  g.fill(x, roof + 2, w, 1, 'b'); // the sill, in shadow
+  g.fill(cabX, roof, cabW, 2, body); // the cabin, set in for a bonnet and a boot
+  g.fill(cabX + 1, roof + 1, cabW - 2, 1, 'n'); // its glass
+  g.set(cabX + Math.round(cabW / 2), roof + 1, body); // the pillar between the doors
 
-  g.fill(x + 1, bottom, 2, 1, 'a'); // wheels, on the ground
-  g.fill(x + w - 3, bottom, 2, 1, 'a');
+  g.fill(x, roof + 2, w, bottom - roof - 2, body); // the body, the whole length
+  g.fill(x, bottom - 1, w, 1, 'b'); // the sill, in shadow
 
-  g.set(x, roof + 1, 'l'); // headlight
-  g.set(x + w - 1, roof + 1, 'i'); // tail light
+  // Wheels, on the ground, with the shadow under the car painted in between
+  // them rather than left clear. The outline pass fills any empty cell touching
+  // the body, so a clear gap comes back as the same near black the wheels are
+  // and the whole bottom row reads as one dark bar with no wheels in it.
+  g.fill(x, bottom, w, 1, 'b');
+  g.fill(x + 2, bottom, 3, 1, 'a');
+  g.fill(x + w - 5, bottom, 3, 1, 'a');
+
+  g.fill(x, roof + 2, 1, 2, 'l'); // headlight
+  g.fill(x + w - 1, roof + 2, 1, 2, 'i'); // tail light
 }
 
 const BUILDERS = {

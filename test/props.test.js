@@ -1,7 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildProp, PROP_COLOURS, PROP_KINDS, PROP_SIZES } from '../src/render/pixel/props.js';
+import {
+  buildProp,
+  drawnSize,
+  PROP_COLOURS,
+  PROP_KINDS,
+  PROP_SIZES,
+  STREET_SCALE,
+} from '../src/render/pixel/props.js';
 import { CELL, cells, CLEAR } from '../src/render/pixel/grid.js';
 import { mulberry32 } from '../src/world/random.js';
 
@@ -27,10 +34,14 @@ test('every cell is a colour the prop palette has, or nothing at all', () => {
 
 // The whole point of the grid. A prop that draws itself larger than the metres
 // it claims would quietly break the scale of the street around it.
+//
+// Against the drawn metres, not the real ones. Street furniture is rendered
+// larger than life so it sits in the same picture as a hero who is too, and the
+// grid follows the size it is actually going to be.
 test('a prop is the size in cells that its metres say it is', () => {
   for (const kind of PROP_KINDS) {
     const grid = build(kind);
-    const size = PROP_SIZES[kind];
+    const size = drawnSize(kind);
 
     // Two cells of slack either way for the keyline the outline pass adds.
     assert.ok(
@@ -42,6 +53,20 @@ test('a prop is the size in cells that its metres say it is', () => {
       `${kind} is ${grid[0].length} wide for ${size.spread} m`,
     );
   }
+});
+
+// The one thing the render scale must not do is bend the street out of shape.
+// Every prop is enlarged by the same factor, so a bench is still the same
+// fraction of a car as it was, and PROP_SIZES stays the honest set of numbers.
+test('everything on the pavement is enlarged by exactly the same amount', () => {
+  for (const kind of PROP_KINDS) {
+    const drawn = drawnSize(kind);
+    const real = PROP_SIZES[kind];
+
+    assert.ok(Math.abs(drawn.height / real.height - STREET_SCALE) < 1e-9, `${kind} height`);
+    assert.ok(Math.abs(drawn.spread / real.spread - STREET_SCALE) < 1e-9, `${kind} spread`);
+  }
+  assert.ok(STREET_SCALE >= 1, 'nothing on the street is drawn smaller than life');
 });
 
 // Everybody already knows how tall these things are relative to each other, so
@@ -65,7 +90,11 @@ test('a car is longer than it is tall, and about the length of a car', () => {
   const grid = build('car');
 
   assert.ok(grid[0].length > grid.length * 2, 'that is not a car shape');
-  assert.ok(Math.abs(grid[0].length * CELL - 4.4) < 1, 'a car is four and a half metres');
+  assert.ok(
+    Math.abs(grid[0].length * CELL - drawnSize('car').spread) < 1.2,
+    'a car is not the length a car is drawn',
+  );
+  assert.equal(PROP_SIZES.car.spread, 4.4, 'a real car is still four and a half metres');
 });
 
 test('nothing floats, everything reaches the ground line', () => {

@@ -13,7 +13,7 @@
 import { chance, range } from './random.js';
 import { SHAPES, roofLedges } from '../render/pixel/facade.js';
 import { cells } from '../render/pixel/grid.js';
-import { mix } from './daylight.js';
+import { mix, desaturate } from './daylight.js';
 
 const ROOF_ANCHOR_STEP = 12; // metres between anchors along a rooftop
 const ROOF_ANCHOR_INSET = 2.5;
@@ -25,12 +25,14 @@ export function makeBuilding(rng, layer, x, width, height, ground) {
   // Its own facade colour, drawn once at generation so the same building is
   // always the same building. A skyline painted in one flat shade reads as a
   // cardboard cutout, and picking per building is what breaks that up.
-  // Darkened by how far back the layer is. Mixed toward a fixed neutral rather
-  // than toward the time of day's shadow, because this is depth and has to hold
-  // whatever hour it is.
-  const face = layer.darken
-    ? mix(layer.palette[Math.floor(rng() * layer.palette.length)], '#20263c', layer.darken)
-    : layer.palette[Math.floor(rng() * layer.palette.length)];
+  //
+  // Then pushed back by how far back the layer is: the colour drained out of it
+  // first, so a distant tower stops competing for attention, then a little
+  // darker. Both are fixed rather than taken from the time of day, because this
+  // is depth and has to hold whatever hour it is.
+  let face = layer.palette[Math.floor(rng() * layer.palette.length)];
+  if (layer.dull) face = desaturate(face, layer.dull);
+  if (layer.darken) face = mix(face, '#20263c', layer.darken);
 
   // What sort of building it is follows from how tall it is, which is how it
   // works in a real city. Nobody builds a two storey shop ninety metres high.

@@ -139,6 +139,18 @@ export function luminance(hex) {
   return 0.299 * r + 0.587 * g + 0.114 * b;
 }
 
+// Drains the colour out of something without changing how light it is.
+//
+// Mixing toward grey is not the same as mixing toward white or toward black,
+// and for a skyline it is the only one of the three that does the right thing:
+// a distant tower is still a rust tower, it is just a quieter one. Mixing
+// toward a fixed grey would lighten the dark colours and darken the light ones
+// until every building at the back was the same tone, which is a wall.
+export function desaturate(hex, amount) {
+  const grey = luminance(hex);
+  return mix(hex, rgb(grey, grey, grey), amount);
+}
+
 function parse(hex) {
   const n = parseInt(hex.slice(1), 16);
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];

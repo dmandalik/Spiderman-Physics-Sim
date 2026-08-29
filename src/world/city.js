@@ -18,20 +18,38 @@ export const CHUNK_WIDTH = 260; // metres of city per chunk
 const CACHE_LIMIT = 20;
 const KEEP_RADIUS = 3; // chunks either side of the view to keep cached
 
-// The skyline palette, sampled off the reference. Pale blue greys with a little
-// hue drift between them, because its towers are all the same concrete and only
-// vary by which way they face.
-const SKYLINE = ['#a9bcd6', '#b4c5db', '#9fb3cf', '#bccbe0', '#a3b8d2', '#aec0d8', '#b8c9de'];
+// One palette for the whole city. Every layer draws from it, so a tower at the
+// back is the same kind of building as one at the front and only looks further
+// away.
+const PALETTE = [
+  '#c05a38', // rust
+  '#d8963f', // mustard
+  '#8a6a45', // stone
+  '#3f8078', // teal
+  '#ab453d', // brick red
+  '#6b5a7a', // plum
+  '#c2703c', // orange
+  '#5b81a4', // slate blue
+  '#b9a259', // sand
+];
 
 // Ordered back to front. Only the last layer is real, everything before it is
 // scenery that moves slower to sell distance.
 //
-// Depth is signalled by darkness, not by haze. That is the opposite of what
-// this used to do, and it was measured rather than guessed: sampling three
-// clusters of overlapping towers in the reference, the one behind is darker
-// every time, by fifteen to twenty percent of luminance. Washing the far layers
-// paler was atmospheric perspective, which is real over kilometres and wrong
-// over the few hundred metres a skyline like this actually spans.
+// Depth is two things, and they do different jobs. `dull` drains the colour out
+// without changing how light the building is, which is what stops a rank of
+// distant towers competing with the one he is actually swinging on. `darken`
+// then takes it down a little, which was measured rather than guessed: sampling
+// three clusters of overlapping towers in the reference, the one behind is
+// darker every time, by fifteen to twenty percent of luminance.
+//
+// Neither is haze. Washing the far layers paler is atmospheric perspective,
+// which is real over kilometres and wrong over the few hundred metres a skyline
+// like this actually spans.
+//
+// The back layers used to be painted from a separate palette of pale blue greys
+// instead. That read as distance, but it also read as a different city, and the
+// grey took a third of the screen with it.
 export const LAYERS = [
   {
     depth: 0.3,
@@ -39,8 +57,9 @@ export const LAYERS = [
     height: [30, 96],
     gap: [0, 0], // packed shoulder to shoulder, the way the reference is
     shade: '#8496b4',
-    palette: SKYLINE,
-    darken: 0.26,
+    palette: PALETTE,
+    dull: 0.6,
+    darken: 0.22,
     towerAbove: 50,
     haze: 0,
     anchors: false,
@@ -51,8 +70,9 @@ export const LAYERS = [
     height: [40, 118],
     gap: [0, 0],
     shade: '#93a5c1',
-    palette: SKYLINE,
-    darken: 0.13,
+    palette: PALETTE,
+    dull: 0.32,
+    darken: 0.11,
     towerAbove: 62,
     haze: 0,
     anchors: false,
@@ -63,22 +83,8 @@ export const LAYERS = [
     height: [52, 168],
     gap: [0, 0],
     shade: '#a8563a',
-    // The front rank keeps its colour. Painting this one blue grey too, which
-    // was the first attempt, turned the whole city into a single flat wall with
-    // no depth in it at all: the reference has a pale skyline *behind* a
-    // coloured front rank, and it is the contrast between the two that reads as
-    // distance, not the darkening on its own.
-    palette: [
-      '#c05a38', // rust
-      '#d8963f', // mustard
-      '#8a6a45', // stone
-      '#3f8078', // teal
-      '#ab453d', // brick red
-      '#6b5a7a', // plum
-      '#c2703c', // orange
-      '#5b81a4', // slate blue
-      '#b9a259', // sand
-    ],
+    palette: PALETTE,
+    dull: 0,
     darken: 0,
     towerAbove: 78,
     haze: 0,

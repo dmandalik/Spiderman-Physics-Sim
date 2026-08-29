@@ -1,8 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { createWorld, step, attachWeb, reelWeb, energy } from '../src/physics/world.js';
+import { createWorld, step, attachWeb, reelWeb, energy, DEFAULT_PARAMS } from '../src/physics/world.js';
 import { assistForce, assistReel, HEROIC } from '../src/physics/assist.js';
+import { TUNABLES } from '../src/physics/tunables.js';
+import { createStepper, FIXED_DT } from '../src/loop.js';
 import { length } from '../src/physics/vec.js';
 
 const DT = 1 / 240;
@@ -124,4 +126,34 @@ test('the floor save never runs the web outside its limits', () => {
     assert.ok(world.web.restLength >= world.params.minWebLength - 1e-9);
     assert.ok(world.web.restLength <= world.params.maxWebRange + 1e-9);
   }
+});
+
+// The heroic clock. This is the one setting in the mode that is about watching
+// rather than about physics, so it is worth stating what it must not break.
+test('the heroic clock runs fast but stays inside the dial that shows it', () => {
+  const dial = TUNABLES.find((t) => t.key === 'timeScale');
+
+  assert.ok(HEROIC.timeScale > 1, 'heroic is not quicker than real time');
+  assert.ok(
+    HEROIC.timeScale >= dial.min && HEROIC.timeScale <= dial.max,
+    `heroic runs at ${HEROIC.timeScale} and the dial only goes to ${dial.max}`,
+  );
+  assert.equal(DEFAULT_PARAMS.timeScale, 1, 'real time is no longer real time');
+});
+
+// It is a clock, not a physics setting. The solver still steps at a fixed 240
+// Hz and every number on the dashboard is still true, so all the scale does is
+// decide how many of those steps a frame of watching buys.
+test('a second of watching buys a second and a bit of simulation', () => {
+  const advance = createStepper();
+  let simulated = 0;
+
+  for (let frame = 0; frame < 60; frame += 1) {
+    advance((1 / 60) * HEROIC.timeScale, (dt) => { simulated += dt; });
+  }
+
+  assert.ok(
+    Math.abs(simulated - HEROIC.timeScale) < FIXED_DT,
+    `a second of watching bought ${simulated.toFixed(3)} s, wanted ${HEROIC.timeScale}`,
+  );
 });

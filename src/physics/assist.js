@@ -23,14 +23,26 @@
 import { vec, length, distance } from './vec.js';
 
 export const HEROIC = {
-  // Films are not fought by air. Heroic mode thins it out, which is one of two
-  // places the mode changes the world rather than what he does in it.
+  // Films are not fought by air. Heroic mode thins it out, which is one of
+  // three places the mode changes the world rather than what he does in it.
   drag: 0.12,
 
-  // The other. At movie speeds a real 9.81 reads as floating, because the
+  // The second. At movie speeds a real 9.81 reads as floating, because the
   // horizontal motion is so much faster than the fall that gravity looks weak
   // beside it. Heavier gravity makes the drops bite and the arcs snap.
   gravity: 14.5, // m/s^2
+
+  // The third, and the only one that is about watching rather than about
+  // physics. A heroic arc takes 2.3 seconds end to end, which is the right
+  // answer for a pendulum 40 metres long and too long to sit through: a film
+  // swing reads at about a second and a half. This runs the clock faster rather
+  // than touching the solver, so every number on the dashboard is still true,
+  // it just arrives sooner. At 1.35 an arc lands at 1.7 seconds.
+  //
+  // Not done by raising gravity further, which is the obvious alternative and
+  // wrong: gravity is already carrying the weight of the falls, and pushing it
+  // to get the pace would make him drop like a stone between webs.
+  timeScale: 1.35,
 
   // Pull along the direction of travel, in metres per second squared. Drag and
   // the geometry of an arc cost him roughly 2, so this covers that several

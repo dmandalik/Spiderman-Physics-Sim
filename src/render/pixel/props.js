@@ -1,15 +1,21 @@
 // Everything on the pavement, drawn on the same grid as the buildings.
 //
 // Sizes here are real. A door is 2.1 metres, so a fire hydrant is 0.8 and comes
-// out four cells tall, and a plane tree is nine metres and comes out forty
-// five. That is not pedantry: it is the only thing that makes a street read as
-// a street rather than as a row of icons at whatever size looked nice. Get one
-// of them wrong and the eye finds it immediately, because everybody already
-// knows how tall a door is.
+// out two cells tall, and a plane tree is nine metres and comes out twenty two.
+// That is not pedantry: it is the only thing that makes a street read as a
+// street rather than as a row of icons at whatever size looked nice. Get one of
+// them wrong and the eye finds it immediately, because everybody already knows
+// how tall a door is.
 //
-// Two things a fifth of a metre apart land on the same number of cells, which
-// is worth knowing before you spend an hour wondering why a bin and a hydrant
-// came out identical. Where that matters the sizes are set apart deliberately.
+// Two things half a metre apart land on the same number of cells, which is
+// worth knowing before you spend an hour wondering why a bin and a hydrant came
+// out identical. Where that matters the sizes are set apart deliberately.
+//
+// Everything under about two metres is drawn cell by cell rather than by
+// scaling a bigger drawing down. A hydrant gets two rows and a bench gets two,
+// and the only way that works is to decide what each row is for. Formulas that
+// take a fraction of the height were what these used to be, and they came out
+// as smudges the moment the grid got coarse enough to be worth looking at.
 //
 // None of this is ever webbable. Anchors belong to rooftops of real buildings,
 // and a lamp post is scenery however tall the art makes it look.
@@ -71,11 +77,22 @@ export const PROP_SIZES = {
   car: { height: 1.5, spread: 4.4 },
 };
 
+// Room around the drawing for the keyline, and for the branches of a tree that
+// reach past its nominal spread.
+//
+// Counted in cells rather than metres on purpose, because that is what it is
+// for, but that also means it grows in metres whenever a cell does. It was four
+// cells when a cell was 0.2 m, which made a car a metre and a half longer than a
+// car the moment cells doubled, so it is two now and the sprite is the size it
+// says it is again.
+const MARGIN = 2;
+const INSET = MARGIN / 2; // cells of it on each side
+
 export function buildProp(kind, rng = () => 0.5) {
   const size = PROP_SIZES[kind];
   if (!size) throw new Error(`no such prop ${kind}`);
 
-  const g = createGrid(cells(size.spread) + 4, cells(size.height) + 2, CLEAR);
+  const g = createGrid(cells(size.spread) + MARGIN, cells(size.height) + 1, CLEAR);
   const draw = BUILDERS[kind];
   draw(g, rng);
   g.outline('a');
@@ -138,7 +155,7 @@ function broadleaf(size) {
     const crownBottom = Math.round(g.rows * (1 - size.stem));
 
     trunk(g, cx, Math.round(g.rows * 0.42), bottom, cells(size.girth));
-    crown(g, cx, 1, crownBottom, (g.cols - 4) / 2, rng);
+    crown(g, cx, 1, crownBottom, (g.cols - MARGIN) / 2, rng);
   };
 }
 
@@ -157,7 +174,7 @@ function conifer(g, rng) {
 
   for (let i = 0; i < tiers; i += 1) {
     const t = (i + 1) / tiers;
-    const half = Math.max(((g.cols - 4) / 2) * (0.32 + t * 0.68), 2);
+    const half = Math.max(((g.cols - MARGIN) / 2) * (0.32 + t * 0.68), 2);
     const y = top + Math.round(span * (i / tiers));
     const h = Math.round(span / tiers) + 3;
 
@@ -194,160 +211,135 @@ function lamp(g) {
 // A three lens head on a post. The lenses are one cell each, which is what a
 // three hundred millimetre lens comes to, and they still read at a distance
 // because nothing else in the street is that colour.
+//
+// The housing is written as five rows rather than derived from the height: hood,
+// three lenses, foot. Working it out as a fraction put all three lenses on the
+// same row once the head came down to three cells.
 function signal(g) {
   const cx = Math.floor(g.cols / 2);
   const bottom = g.rows - 1;
+  const head = 5;
 
-  g.fill(cx - 1, cells(1.3), 2, bottom - cells(1.3), 'b');
-  g.fill(cx - 3, bottom - cells(0.4), 6, cells(0.4), 'b');
+  g.fill(cx, head, 1, bottom - head, 'b'); // the post
+  g.fill(cx - 1, bottom, 3, 1, 'b'); // its foot
 
-  const w = cells(0.45);
-  const h = cells(1.2);
-  const x = cx - Math.floor(w / 2);
-
-  g.fill(x, 1, w, h, 'j'); // the housing
-  g.fill(x, 1, w, 1, 'c'); // its hood
-
-  ['i', 'j', 'k'].forEach((lens, i) => {
-    g.fill(x + 1, 3 + i * Math.floor((h - 3) / 3), Math.max(w - 2, 1), 1, lens);
-  });
+  g.fill(cx - 1, 0, 3, head, 'b'); // the housing
+  g.set(cx, 1, 'i');
+  g.set(cx, 2, 'j');
+  g.set(cx, 3, 'k');
 }
 
-// An octagon, at the size the plate actually is. Nine hundred millimetres comes
-// to five cells, so the chamfers are one cell each and that is the whole shape.
+// An octagon, at the size the plate actually is. Nine hundred millimetres is
+// three cells now, and an octagon three cells across is a square with its four
+// corners taken off, which is the entire shape and reads correctly.
 function stop(g) {
   const cx = Math.floor(g.cols / 2);
   const bottom = g.rows - 1;
+  const size = 3;
+  const x = cx - 1;
 
-  g.fill(cx, cells(0.9), 1, bottom - cells(0.9), 'c'); // the post
-
-  const size = cells(0.9);
-  const x = cx - Math.floor(size / 2);
+  g.fill(cx, size, 1, bottom - size + 1, 'c'); // the post
 
   g.fill(x, 0, size, size, 'i');
-  // Knock the corners off to make it an octagon rather than a square.
-  const chamfer = Math.max(Math.round(size / 4), 1);
-  for (let i = 0; i < chamfer; i += 1) {
-    for (let j = 0; j < chamfer - i; j += 1) {
-      g.set(x + j, i, CLEAR);
-      g.set(x + size - 1 - j, i, CLEAR);
-      g.set(x + j, size - 1 - i, CLEAR);
-      g.set(x + size - 1 - j, size - 1 - i, CLEAR);
-    }
-  }
+  g.set(x, 0, CLEAR);
+  g.set(x + size - 1, 0, CLEAR);
+  g.set(x, size - 1, CLEAR);
+  g.set(x + size - 1, size - 1, CLEAR);
 
-  // The word, suggested rather than written. At five cells across a letter
-  // would be a single pixel, so this is a bar and everyone reads it as STOP.
-  g.fill(x + 1, Math.floor(size / 2), size - 2, 1, 'm');
+  // The word, suggested rather than written. At three cells across a letter
+  // would be a fraction of a pixel, so this is a bar and everyone reads it.
+  g.set(x + 1, 1, 'm');
 }
 
+// Two rows, because a hydrant is eight hundred millimetres and that is what
+// eight hundred millimetres comes to. Bonnet on top, outlets either side.
 function hydrant(g) {
   const cx = Math.floor(g.cols / 2);
   const bottom = g.rows - 1;
 
-  g.fill(cx - 1, 2, 3, bottom - 2, 'i');
-  g.fill(cx - 1, 2, 1, bottom - 2, 'j'); // lit edge
-  g.fill(cx - 2, 3, 5, 1, 'i'); // the side outlets
-  g.fill(cx - 1, 0, 3, 2, 'i'); // the bonnet
+  g.fill(cx - 1, bottom - 1, 2, 2, 'i');
+  g.set(cx - 2, bottom, 'i'); // the side outlets
+  g.set(cx + 1, bottom, 'i');
+  g.set(cx - 1, bottom - 1, 'j'); // the lit face of the bonnet
 }
 
-// Slatted, on cast iron ends. Eight hundred and fifty millimetres to the top of
-// the back, which at this cell size is six rows, so every element gets exactly
-// one row and the gaps between them have to be part of the design.
+// Slatted timber on cast iron ends. Eight hundred and fifty millimetres to the
+// top of the back is two rows: one is the back, the other is the seat, and the
+// legs are the two cells under them.
 function bench(g) {
   const bottom = g.rows - 1;
-  const w = g.cols - 4;
-  const x = 2;
+  const w = g.cols - MARGIN;
+  const x = INSET;
 
-  // The ends, which carry the whole thing and read even in silhouette.
-  g.fill(x, 1, 1, bottom, 'b');
-  g.fill(x + w - 1, 1, 1, bottom, 'b');
-  g.fill(x, bottom - 1, 2, 2, 'b');
-  g.fill(x + w - 2, bottom - 1, 2, 2, 'b');
-
-  g.fill(x + 1, 1, w - 2, 1, 'o'); // top rail of the back
-  g.fill(x + 1, 3, w - 2, 1, 'o'); // lower rail, with daylight between them
-  g.fill(x, bottom - 2, w, 1, 'o'); // the seat
-  g.fill(x + 1, bottom - 1, w - 2, 1, 'b'); // shadow under it
+  // Two rows of one colour is a box, so the back is the ironwork tone and the
+  // seat is timber. At this size the tone change is the only thing carrying it.
+  g.fill(x, bottom - 2, w, 1, 'b'); // the back
+  g.fill(x, bottom - 1, w, 1, 'o'); // the seat
+  g.set(x, bottom, 'b'); // the ends, in silhouette
+  g.set(x + w - 1, bottom, 'b');
 }
 
 function bin(g) {
   const cx = Math.floor(g.cols / 2);
   const bottom = g.rows - 1;
-  const w = cells(0.55);
-  const x = cx - Math.floor(w / 2);
 
-  g.fill(x, 2, w, bottom - 2, 'c');
-  g.fill(x, 1, w + 1, 2, 'b'); // the lid, overhanging a touch
-  for (let i = 1; i < w; i += 2) g.fill(x + i, 4, 1, bottom - 5, 'b'); // slats
+  g.fill(cx - 1, bottom - 2, 2, 3, 'c');
+  g.fill(cx - 1, bottom - 2, 2, 1, 'b'); // the lid
 }
 
 function postbox(g) {
   const cx = Math.floor(g.cols / 2);
   const bottom = g.rows - 1;
-  const w = cells(0.55);
-  const x = cx - Math.floor(w / 2);
 
-  g.fill(x, 2, w, bottom - 2, 'i');
-  g.fill(x, 1, w, 2, 'i');
-  g.fill(x, 1, 1, bottom - 1, 'j'); // lit edge
-  g.fill(x + 1, 4, w - 2, 1, 'a'); // the slot
+  g.fill(cx - 1, bottom - 3, 2, 4, 'i');
+  g.set(cx - 1, bottom - 3, 'j'); // lit edge of the domed top
+  g.set(cx, bottom - 2, 'a'); // the slot
 }
 
 // A pole, a flag, and a shelter with a bench in it.
 function busStop(g) {
   const bottom = g.rows - 1;
   const roof = 1;
-  const w = g.cols - 4;
+  const w = g.cols - MARGIN;
+  const x = INSET;
 
-  g.fill(2, roof, w, 2, 'c'); // the roof
-  g.fill(2, roof + 2, 1, bottom - roof - 2, 'b'); // the back and the upright
-  g.fill(2 + w - 1, roof + 2, 1, bottom - roof - 2, 'b');
-  g.fill(3, roof + 3, w - 3, bottom - roof - 6, 'n'); // the glass back
-  g.fill(4, bottom - 3, w - 5, 1, 'o'); // the bench inside
+  g.fill(x, roof, w, 1, 'c'); // the roof
+  g.fill(x + 1, roof + 1, w - 2, bottom - roof - 2, 'n'); // the glass back
+  g.fill(x, roof + 1, 1, bottom - roof - 1, 'b'); // the uprights
+  g.fill(x + w - 1, roof + 1, 1, bottom - roof - 1, 'b');
+  g.fill(x + 1, bottom - 1, w - 2, 1, 'o'); // the bench inside
 
   // The flag on the end, so you can tell it from a shop canopy.
-  g.fill(2 + w - 1, roof - 1, 3, cells(0.5), 'i');
+  g.fill(x + w - 1, roof - 1, 2, 1, 'i');
 }
 
 // Parked at the kerb. Four point four metres, which is a normal car, and it is
 // the object that most quickly tells you how big everything else is.
-// Parked at the kerb. Four point four metres, which is a normal car, and it is
-// the object that most quickly tells you how big everything else is.
 //
-// At ten rows tall every band gets one or two of them, so the order matters
-// more than the detail: wheels on the ground, body above the axle line, cabin
-// set in from both ends. Get that stack right and it reads as a car even at
-// two screen pixels per cell.
+// A metre and a half tall is four rows, and there is exactly one job for each:
+// cabin, waist, sill, wheels. That stack is what reads as a car. Working the
+// bands out as fractions of the height, which is what this used to do, collapses
+// two of them onto the same row and leaves a coloured brick.
 function car(g, rng) {
   const bottom = g.rows - 1;
-  const w = g.cols - 4;
-  const x = 2;
+  const w = g.cols - MARGIN;
+  const x = INSET;
   const body = rng() < 0.5 ? 'i' : 'n';
 
-  const wheel = cells(0.62);
-  const axle = bottom - Math.floor(wheel / 2);
-  const sill = axle - 1; // where the bodywork stops and the wheels show
-  const waist = Math.max(Math.round(g.rows * 0.44), 3);
-  const roof = 1;
+  const roof = bottom - 3;
+  const cabX = x + Math.round(w * 0.3);
+  const cabW = Math.max(Math.round(w * 0.4), 3);
 
-  // Cabin first, set well in from both ends so there is a bonnet and a boot.
-  const cabX = x + Math.round(w * 0.26);
-  const cabW = Math.round(w * 0.44);
-  g.fill(cabX, roof, cabW, waist - roof + 1, body);
-  g.fill(cabX + 1, roof + 1, cabW - 2, waist - roof - 1, 'n'); // glass
-  g.fill(cabX + Math.round(cabW / 2), roof + 1, 1, waist - roof - 1, body); // the pillar
+  g.fill(cabX, roof, cabW, 1, body); // the cabin, set in for a bonnet and a boot
+  g.fill(cabX + 1, roof, cabW - 2, 1, 'n'); // its glass
+  g.fill(x, roof + 1, w, 2, body); // the body, the whole length
+  g.fill(x, roof + 2, w, 1, 'b'); // the sill, in shadow
 
-  // Body along the whole length, sitting on the axle line.
-  g.fill(x, waist, w, sill - waist + 1, body);
-  g.fill(x, sill, w, 1, 'b'); // the sill, in shadow
+  g.fill(x + 1, bottom, 2, 1, 'a'); // wheels, on the ground
+  g.fill(x + w - 3, bottom, 2, 1, 'a');
 
-  // Wheels, on the ground rather than floating above it.
-  g.disc(x + Math.round(w * 0.22), axle, wheel / 2, 'a');
-  g.disc(x + Math.round(w * 0.78), axle, wheel / 2, 'a');
-
-  g.fill(x, waist + 1, 1, 2, 'l'); // headlight
-  g.fill(x + w - 1, waist + 1, 1, 2, 'i'); // tail light
+  g.set(x, roof + 1, 'l'); // headlight
+  g.set(x + w - 1, roof + 1, 'i'); // tail light
 }
 
 const BUILDERS = {

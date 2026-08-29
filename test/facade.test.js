@@ -50,9 +50,26 @@ test('it holds together at sizes it will really be asked for', () => {
   }
 });
 
-test('a cell is small enough to carry the detail the reference has', () => {
-  // The reference draws a shopfront about forty five cells wide. Anything much
-  // coarser than this cannot fit a window frame inside a window.
-  assert.ok(CELL <= 0.25, `cells are ${CELL} m, too coarse for a frame`);
-  assert.ok(9 / CELL > 35, 'a nine metre shop comes out too few cells wide');
+// This replaces a test that asserted the opposite, that a cell had to be 0.25 m
+// or finer. That number came from guessing at a shopfront in a busy street
+// photograph. The separated tower sheet can actually be measured, and it says
+// 0.4: its tall tower is thirty five metres wide and eighty six art pixels
+// across. At the old value the same tower came out a hundred and seventy five
+// cells, twice the reference's resolution, and an art pixel landed on one or two
+// screen pixels, which is the whole reason it never read as pixel art.
+test('a cell is the size the reference draws one', () => {
+  const REFERENCE = { metres: 35, pixels: 86 };
+  const mine = REFERENCE.metres / CELL;
+
+  assert.ok(
+    Math.abs(mine - REFERENCE.pixels) <= 6,
+    `a ${REFERENCE.metres} m tower is ${mine} cells here and ${REFERENCE.pixels} in the reference`,
+  );
+});
+
+// The other half of the same judgement. A cell has to survive to the screen as
+// something you can see the corners of, and the camera only ever shows between
+// five and ten pixels to the metre.
+test('an art pixel is at least two screen pixels at every zoom', () => {
+  assert.ok(CELL * 5 >= 2, `a cell is ${CELL * 5} screen pixels zoomed out`);
 });

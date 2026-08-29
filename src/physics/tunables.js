@@ -111,13 +111,23 @@ export const TUNABLES = [
 // Whole worlds, one click each. The point of these is the comparison: swinging
 // on the moon and swinging in treacle teach more in ten seconds than the
 // numbers do on their own.
+//
+// Every preset has to set every key in PRESET_KEYS, and there is a test that
+// insists on it. They used to be partial patches, so Vacuum set only drag and
+// left you in whatever gravity the last planet had put you in. Clicking a
+// button in a row of worlds and getting a hybrid of two of them reads as the
+// panel ignoring you, which is exactly how it was reported.
+export const PRESET_KEYS = ['gravity', 'drag', 'mass'];
+
 export const PRESETS = [
   { name: 'Earth', values: { gravity: 9.81, drag: 0.45, mass: 75 } },
-  { name: 'Moon', values: { gravity: 1.62, drag: 0 } },
-  { name: 'Mars', values: { gravity: 3.72, drag: 0.02 } },
-  { name: 'Jupiter', values: { gravity: 24.79, drag: 0.55 } },
-  { name: 'Vacuum', values: { drag: 0 } },
-  { name: 'Treacle', values: { drag: 6 } },
+  { name: 'Moon', values: { gravity: 1.62, drag: 0, mass: 75 } },
+  { name: 'Mars', values: { gravity: 3.72, drag: 0.02, mass: 75 } },
+  { name: 'Jupiter', values: { gravity: 24.79, drag: 0.55, mass: 75 } },
+  // Earth with the air taken out, and Earth with far too much of it. Both are
+  // whole worlds rather than modifiers, so they say what gravity they mean.
+  { name: 'Vacuum', values: { gravity: 9.81, drag: 0, mass: 75 } },
+  { name: 'Treacle', values: { gravity: 9.81, drag: 6, mass: 75 } },
 ];
 
 // A fresh set of everything the lab can change, at the values the real

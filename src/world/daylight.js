@@ -116,6 +116,29 @@ export function mix(hex, towards, amount) {
   return rgb(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t);
 }
 
+// Mixes just far enough to land on a target fraction of the original's
+// luminance, rather than a fixed fraction of the way there.
+//
+// This is the difference between a window channel that reads and one that
+// vanishes. Mixing seventeen percent toward the shadow takes twenty points of
+// luminance off a pale grey tower and only seven off a dark rust one, because
+// the rust already sits near the shadow. Perception is closer to a ratio than
+// to a difference, so asking for a ratio gives the same apparent contrast on
+// every colour in the city.
+export function toRatio(hex, towards, ratio) {
+  const from = luminance(hex);
+  const to = luminance(towards);
+  if (Math.abs(from - to) < 1e-6) return hex;
+
+  const amount = (from - from * ratio) / (from - to);
+  return mix(hex, towards, Math.min(Math.max(amount, 0), 1));
+}
+
+export function luminance(hex) {
+  const [r, g, b] = parse(hex);
+  return 0.299 * r + 0.587 * g + 0.114 * b;
+}
+
 function parse(hex) {
   const n = parseInt(hex.slice(1), 16);
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];

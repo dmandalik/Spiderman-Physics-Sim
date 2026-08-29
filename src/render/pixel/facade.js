@@ -17,7 +17,7 @@
 // hundred and twenty metres tall and you read it as a silhouette.
 
 import { createGrid, CLEAR, CELL, cells } from './grid.js';
-import { timeOfDay, mix } from '../../world/daylight.js';
+import { timeOfDay, mix, toRatio } from '../../world/daylight.js';
 
 export { CELL, cells };
 
@@ -46,6 +46,16 @@ export function facadePalette(face, time = timeOfDay()) {
     // hundred metres of it reading as graph paper is the band of brighter sky
     // sliding diagonally across it.
     i: time.sheen,
+    // Traced off the reference skyline. Its towers are a light body with
+    // *darker* window channels cut into it, which is the opposite polarity to a
+    // lit night tower and the thing that makes them read as daytime concrete
+    // rather than as glass with the lights on.
+    //
+    // The reference measures at 0.88 of the body's luminance, and asking for
+    // that ratio rather than a fixed mix is what keeps a rust tower as legible
+    // as a pale grey one.
+    j: mix(toRatio(face, time.shadow, 0.87), time.wash, time.washAmount * 0.5),
+    k: mix(toRatio(face, time.sunlight, 1.1), time.wash, time.washAmount * 0.5),
   };
 }
 
@@ -356,52 +366,80 @@ function silhouette(shape, cols, rows) {
   };
 }
 
-// Bays of glazing with the wall left standing between them. The standing wall
-// is the pier, which is cheaper than drawing piers and then fitting windows
-// around them, and it is why a tower reads as vertical.
+// The shaft, traced off the towers in the reference skyline.
 //
-// Bay positions come off one grid spanning the full width, not off whatever the
-// width happens to be at that height, so the piers run dead straight through
-// every setback instead of jinking sideways at each step.
+// Measured rather than invented. Averaging the brightness of each column across
+// one of its towers gives a clean five pixel beat: two columns of light pier,
+// three of darker window channel, repeating the whole width. Averaging by row
+// gives a banded cornice at the top and a lighter floor division every few
+// storeys. Those are the only features on it.
+//
+// The first version of this had mullions, transoms, spandrels and a reflected
+// sun band. All of that is finer than the reference and none of it survives at
+// the size a tower is actually seen, which is what made the skyline read as
+// fussy rather than as pixel art.
+const BEAT = {
+  pitch: 2.3, // metres from one pier to the next
+  pier: 0.9, // the lit face of it
+  band: 27, // metres between the light floor divisions
+};
+
 function curtainWall(g, form, rng) {
   const { cols } = g;
-  const pitch = cells(4.2);
-  const pier = cells(1.1);
-  const glass = pitch - pier;
-  const first = Math.round(((cols % pitch) + pier) / 2);
-
+  const time = timeOfDay();
+  const pitch = cells(BEAT.pitch);
+  const pier = cells(BEAT.pier);
+  const channel = pitch - pier;
   const storey = cells(STOREY.office);
-  const winH = storey - cells(1.1);
-  const mullion = cells(1.4);
 
-  // Where the band of reflected sun crosses the building. Sloped, because a
-  // vertical stripe reads as a mistake and a horizontal one as a floor.
-  const sheenAt = (x, y) => ((x * 2 + y) % (cols * 3.2)) < cols * 0.9;
+  const top = form.top + cells(4.4); // clear of the cornice
+  const bottom = form.lobbyTop;
 
-  for (let y = form.top + cells(2); y + storey < form.lobbyTop; y += storey) {
-    const inset = form.insetAt(y + winH);
-    if (cols - inset * 2 < pitch) continue;
+  const within = (x, y) => {
+    const inset = form.insetAt(y);
+    return x >= inset + 1 && x + channel <= cols - inset - 1;
+  };
 
-    // Offices work late by the floor, not by the window. Lighting them one at a
-    // time gives static; lighting them in bands gives a building.
-    const busy = rng() < 0.42;
-
-    for (let x = first; x + glass <= cols; x += pitch) {
-      if (x < inset + pier || x + glass > cols - inset - pier) continue;
-
-      const lit = rng() < (busy ? Math.min(timeOfDay().lit * 1.9, 0.95) : timeOfDay().lit * 0.3);
-      g.fill(x, y, glass, winH, lit ? 'h' : sheenAt(x, y) ? 'i' : 'g');
-
-      // Mullions down the bay and a transom across the head of it. Without
-      // these a bay is a rectangle of colour rather than a window.
-      for (let m = mullion; m < glass; m += mullion) g.fill(x + m, y, 1, winH, 'b');
-      g.fill(x, y, glass, 1, 'b');
+  // Channels straight down the whole shaft. Drawing them as one long run rather
+  // than per storey is what gives the unbroken verticals the reference has.
+  for (let x = pier; x + channel <= cols; x += pitch) {
+    for (let y = top; y < bottom; y += 1) {
+      if (within(x, y)) g.fill(x, y, channel, 1, 'j');
     }
+  }
 
-    // The spandrel under each band of glass, its highlight, and its shadow.
-    g.fill(inset, y + winH, cols - inset * 2, 1, 'e');
-    g.fill(inset, y + winH + 1, cols - inset * 2, 1, 'c');
-    g.fill(inset, y + winH + 2, cols - inset * 2, 1, 'b');
+  // Floor lines, cut across the channels only. This is the fine grain that was
+  // missing: in the reference each vertical is a column of dashes rather than
+  // one unbroken bar, and the breaks are the floors.
+  for (let y = top; y < bottom; y += storey) {
+    for (let x = pier; x + channel <= cols; x += pitch) {
+      if (within(x, y)) g.fill(x, y, channel, 1, 'd');
+    }
+  }
+
+  // Lit windows. One window tall rather than one storey, and pale by day: a
+  // saturated amber square at noon reads as a fault, not as an office.
+  // Warm once the lights are on, otherwise just a paler pane. A near white
+  // fleck at noon reads as a hole in the building.
+  const lamp = time.lit > 0.3 ? 'h' : 'e';
+  const winHeight = Math.max(storey - cells(1.9), 2);
+
+  for (let y = top + 1; y + winHeight < bottom; y += storey) {
+    for (let x = pier; x + channel <= cols; x += pitch) {
+      if (!within(x, y)) continue;
+      if (rng() > time.lit) continue;
+      g.fill(x, y, channel, winHeight, lamp);
+    }
+  }
+
+  // The floor divisions. One light row and one dark, no more: the reference has
+  // these every few storeys and they are barely there. Anything heavier turns
+  // the shaft into a ladder.
+  for (let y = top + cells(BEAT.band); y < bottom; y += cells(BEAT.band)) {
+    const inset = form.insetAt(y);
+    if (cols - inset * 2 < 4) continue;
+    g.fill(inset, y, cols - inset * 2, 1, 'k');
+    g.fill(inset, y + 1, cols - inset * 2, 1, 'c');
   }
 }
 
@@ -409,13 +447,17 @@ function curtainWall(g, form, rng) {
 // after the glazing so it always wins, which stops the glass running off the
 // side and taking the building's edge with it.
 function returns(g, form) {
-  const { cols, rows } = g;
+  const { cols } = g;
+  const edge = cells(0.7);
 
   for (let y = form.top; y < form.lobbyTop; y += 1) {
     const inset = form.insetAt(y);
     if (cols - inset * 2 < 6) continue;
-    g.fill(inset, y, 2, 1, 'd');
-    g.fill(cols - inset - 2, y, 2, 1, 'c');
+    // Sun from the left, so that return catches it and the far one does not.
+    // The reference is emphatic about this and it is most of what stops a
+    // tower reading as a flat rectangle of one colour.
+    g.fill(inset, y, edge, 1, 'k');
+    g.fill(cols - inset - edge, y, edge, 1, 'c');
   }
 }
 
@@ -442,13 +484,25 @@ function crown(g, form, rng) {
     }
   }
 
-  // A lit band under the parapet. This is the detail that makes a night skyline
-  // look expensive, and it costs three rows.
-  const top = form.top + cells(1);
-  const inset = form.insetAt(top + 3);
-  if (cols - inset * 2 >= 6 && form.shape !== 'spire') {
-    g.fill(inset + 1, top, cols - inset * 2 - 2, 1, 'h');
-    g.fill(inset, top + 1, cols - inset * 2, 1, 'e');
+  // The cornice, measured off the reference rather than designed. Averaging its
+  // towers by row gives light, three dark, two light, three dark, two light,
+  // and then the shaft begins. Five bands in about two metres.
+  if (form.shape !== 'spire') {
+    const bands = [
+      ['k', 0.25],
+      ['c', 0.7],
+      ['k', 0.45],
+      ['c', 0.7],
+      ['k', 0.45],
+    ];
+
+    let y = form.top;
+    for (const [tone, metres] of bands) {
+      const inset = form.insetAt(y + 1);
+      const height = cells(metres);
+      if (cols - inset * 2 >= 4) g.fill(inset, y, cols - inset * 2, height, tone);
+      y += height;
+    }
   }
 
   if (form.shape === 'deco') fins(g, form);

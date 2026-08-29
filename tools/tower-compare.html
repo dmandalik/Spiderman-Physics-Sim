@@ -1,0 +1,43 @@
+<!doctype html><meta charset="utf-8"><title>tower vs reference</title>
+<style>
+ body{margin:0;background:#8fc0e4;display:flex;align-items:flex-end;gap:26px;padding:20px;font:11px monospace;color:#123}
+ canvas,img{image-rendering:pixelated}
+ figure{margin:0;text-align:center}
+ figcaption{margin-top:8px}
+</style>
+<figure><canvas id="ref"></canvas><figcaption>reference, 4x</figcaption></figure>
+<figure><canvas id="mine"></canvas><figcaption id="cap">mine</figcaption></figure>
+<script type="module">
+import { buildFacade, facadePalette } from '/src/render/pixel/facade.js';
+import { cells } from '/src/render/pixel/grid.js';
+import { spritePixels } from '/src/render/pixel/sprite.js';
+import { setTimeOfDay } from '/src/world/daylight.js';
+import { mulberry32 } from '/src/world/random.js';
+
+setTimeOfDay('day');
+
+// The reference tower, at four times size.
+const img = new Image(); img.src = '/game references/city.jpg'; await img.decode();
+const SX = 157, SY = 12, SW = 46, SH = 200, S = 4;
+const r = document.getElementById('ref');
+r.width = SW * S; r.height = SH * S;
+const rc = r.getContext('2d'); rc.imageSmoothingEnabled = false;
+rc.drawImage(img, SX, SY, SW, SH, 0, 0, SW * S, SH * S);
+
+// Mine, at the same apparent size. The reference tower is about 21 m wide and
+// 90 tall, so it is drawn at whatever scale makes the two match on screen.
+const METRES = [21, 90];
+const cols = cells(METRES[0]), rows = cells(METRES[1]);
+const grid = buildFacade({ kind: 'tower', shape: 'slab', cols, rows, rng: mulberry32(3) });
+const { width, height, data } = spritePixels(grid, facadePalette('#a9bcd6'));
+
+const off = document.createElement('canvas');
+off.width = width; off.height = height;
+off.getContext('2d').putImageData(new ImageData(data, width, height), 0, 0);
+
+const m = document.getElementById('mine');
+m.width = r.width; m.height = r.height;
+const mc = m.getContext('2d'); mc.imageSmoothingEnabled = false;
+mc.drawImage(off, 0, 0, m.width, m.height);
+document.getElementById('cap').textContent = `mine, ${cols} x ${rows} cells (${METRES[0]} x ${METRES[1]} m)`;
+</script>

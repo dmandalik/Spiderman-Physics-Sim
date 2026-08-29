@@ -74,7 +74,11 @@ export const PROP_SIZES = {
   bin: { height: 1.1, spread: 0.6 },
   postbox: { height: 1.4, spread: 0.6 },
   busStop: { height: 2.4, spread: 4 },
-  car: { height: 1.5, spread: 4.4 },
+  // A big one, and deliberately so. A car is a long low object, so its height
+  // is the thing that under reads next to a figure drawn four times life: at a
+  // saloon's 1.5 m it came out barely a third of him. Two point two by five is a
+  // full size pickup, which is an honest vehicle and half his height drawn.
+  car: { height: 2.2, spread: 5 },
 };
 
 // Drawn bigger than life, the same way the hero is and for the same reason.
@@ -350,13 +354,13 @@ function busStop(g) {
   g.fill(x + w - 1, roof - 1, 2, 1, 'i');
 }
 
-// Parked at the kerb. Four point four metres, which is a normal car, and it is
-// the object that most quickly tells you how big everything else is.
+// Parked at the kerb, and the object that most quickly tells you how big
+// everything else is.
 //
-// A metre and a half tall is four rows, and there is exactly one job for each:
-// cabin, waist, sill, wheels. That stack is what reads as a car. Working the
-// bands out as fractions of the height, which is what this used to do, collapses
-// two of them onto the same row and leaves a coloured brick.
+// Five bands, in order from the top: roof, glass, body, sill, tyres. Each one is
+// placed rather than taken as a fraction of the height, because fractions
+// collapse two bands onto the same row the moment the sprite gets short and what
+// is left is a coloured brick.
 function car(g, rng) {
   const bottom = g.rows - 1;
   const w = g.cols - MARGIN;
@@ -364,26 +368,36 @@ function car(g, rng) {
   const body = rng() < 0.5 ? 'i' : 'n';
 
   const roof = 1;
+  const tyre = 2; // rows of it, standing proud of the sill
+  const sill = bottom - tyre;
+
   const cabX = x + Math.round(w * 0.26);
   const cabW = Math.max(Math.round(w * 0.46), 3);
+  const cabH = Math.max(Math.round((sill - roof) * 0.45), 2);
 
-  g.fill(cabX, roof, cabW, 2, body); // the cabin, set in for a bonnet and a boot
-  g.fill(cabX + 1, roof + 1, cabW - 2, 1, 'n'); // its glass
-  g.set(cabX + Math.round(cabW / 2), roof + 1, body); // the pillar between the doors
+  g.fill(cabX, roof, cabW, cabH, body); // the cabin, set in for a bonnet and a boot
+  g.fill(cabX + 1, roof + 1, cabW - 2, cabH - 1, 'n'); // its glass
+  g.fill(cabX + Math.round(cabW / 2), roof + 1, 1, cabH - 1, body); // the pillar
 
-  g.fill(x, roof + 2, w, bottom - roof - 2, body); // the body, the whole length
-  g.fill(x, bottom - 1, w, 1, 'b'); // the sill, in shadow
+  g.fill(x, roof + cabH, w, sill - roof - cabH + 1, body); // the body, the whole length
+  g.fill(x, sill, w, 1, 'b'); // the sill, in shadow
 
-  // Wheels, on the ground, with the shadow under the car painted in between
-  // them rather than left clear. The outline pass fills any empty cell touching
-  // the body, so a clear gap comes back as the same near black the wheels are
-  // and the whole bottom row reads as one dark bar with no wheels in it.
-  g.fill(x, bottom, w, 1, 'b');
-  g.fill(x + 2, bottom, 3, 1, 'a');
-  g.fill(x + w - 5, bottom, 3, 1, 'a');
+  // Tyres, black and standing proud of the bodywork, with the underside of the
+  // car painted in between them rather than left clear. The outline pass fills
+  // any empty cell touching the body, so a clear gap comes back as the same near
+  // black the tyres are and the whole bottom reads as one dark bar with no
+  // wheels in it. Painting it a tone up is what lets the rubber read as rubber.
+  g.fill(x + 1, sill + 1, w - 2, tyre, 'c');
 
-  g.fill(x, roof + 2, 1, 2, 'l'); // headlight
-  g.fill(x + w - 1, roof + 2, 1, 2, 'i'); // tail light
+  // Solid black, no hub. A lighter centre reads as a hole at this size, and
+  // what makes a wheel a wheel here is being the darkest thing on the car.
+  const wheel = Math.max(Math.round(w * 0.18), 3);
+  for (const at of [x + Math.round(w * 0.14), x + w - wheel - Math.round(w * 0.14)]) {
+    g.fill(at, sill + 1, wheel, tyre, 'a');
+  }
+
+  g.fill(x, roof + cabH, 1, 2, 'l'); // headlight
+  g.fill(x + w - 1, roof + cabH, 1, 2, 'i'); // tail light
 }
 
 const BUILDERS = {

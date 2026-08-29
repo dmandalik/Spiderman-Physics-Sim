@@ -94,7 +94,17 @@ test('a car is longer than it is tall, and about the length of a car', () => {
     Math.abs(grid[0].length * CELL - drawnSize('car').spread) < 1.2,
     'a car is not the length a car is drawn',
   );
-  assert.equal(PROP_SIZES.car.spread, 4.4, 'a real car is still four and a half metres');
+  // The real figure stays a real figure. Five metres by two point two is a full
+  // size pickup, which is a big vehicle and still a vehicle: the render scale is
+  // the only place the drawing is allowed to exaggerate.
+  assert.ok(
+    PROP_SIZES.car.spread >= 4 && PROP_SIZES.car.spread <= 6,
+    `a real car is ${PROP_SIZES.car.spread} m long`,
+  );
+  assert.ok(
+    PROP_SIZES.car.height >= 1.4 && PROP_SIZES.car.height <= 2.4,
+    `a real car is ${PROP_SIZES.car.height} m tall`,
+  );
 });
 
 test('nothing floats, everything reaches the ground line', () => {

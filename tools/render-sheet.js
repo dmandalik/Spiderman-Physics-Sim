@@ -14,7 +14,9 @@ import { writeFileSync } from 'node:fs';
 import { encodePng } from './png.js';
 import { CELL, cells } from '../src/render/pixel/grid.js';
 import { buildFacade, facadePalette } from '../src/render/pixel/facade.js';
-import { buildProp, PROP_COLOURS, PROP_KINDS, PROP_SIZES } from '../src/render/pixel/props.js';
+import { buildProp, drawnSize, PROP_COLOURS, PROP_KINDS } from '../src/render/pixel/props.js';
+import { COLOURS as HERO_COLOURS, POSES } from '../src/render/pixel/poses.js';
+import { HERO_HEIGHT, RENDER_SCALE } from '../src/render/rig.js';
 import { mulberry32 } from '../src/world/random.js';
 
 const [out = 'sheet.png', scaleArg = '3', what = 'all'] = process.argv.slice(2);
@@ -60,13 +62,43 @@ if (what !== 'props') {
 
 if (what !== 'buildings') {
   PROP_KINDS.forEach((kind, i) => {
-    const size = PROP_SIZES[kind];
+    const size = drawnSize(kind);
     sprites.push({
       grid: buildProp(kind, mulberry32(kind.length * 31 + i)),
       palette: PROP_COLOURS,
       metres: [size.spread, size.height],
     });
   });
+}
+
+// Him, last, at the size he is actually drawn.
+//
+// This is the comparison the sheet was missing. Everything else on it was at
+// true scale and he is rendered several times life, so the street furniture
+// came out smaller than the man standing next to it and nothing here showed
+// that. Now it does, and any future change to either scale has to face him.
+//
+// Resampled onto the city's grid, because his own is finer: he is a 46 row
+// trace of the reference standing 7.9 m tall, so an art pixel of his is about
+// 0.17 m against the city's 0.4. Drawing his grid cell for cell would put him
+// on the sheet at twice the height the ruler beside him says.
+{
+  const pose = POSES.perch;
+  const source = pose.scaleRows ?? pose.grid.length;
+  const metres = HERO_HEIGHT * RENDER_SCALE;
+  const tallM = (pose.grid.length / source) * metres;
+  const wideM = (pose.grid[0].length / source) * metres;
+  const rows = cells(tallM);
+  const cols = cells(wideM);
+
+  const grid = Array.from({ length: rows }, (unused, row) =>
+    Array.from({ length: cols }, (also, col) => {
+      const y = Math.min(Math.floor((row / rows) * pose.grid.length), pose.grid.length - 1);
+      const x = Math.min(Math.floor((col / cols) * pose.grid[0].length), pose.grid[0].length - 1);
+      return pose.grid[y][x];
+    }).join(''));
+
+  sprites.push({ grid, palette: HERO_COLOURS, metres: [wideM, tallM] });
 }
 
 const tallest = Math.max(...sprites.map((s) => s.grid.length));

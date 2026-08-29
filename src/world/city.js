@@ -18,47 +18,56 @@ export const CHUNK_WIDTH = 260; // metres of city per chunk
 const CACHE_LIMIT = 20;
 const KEEP_RADIUS = 3; // chunks either side of the view to keep cached
 
+// The skyline palette, sampled off the reference. Pale blue greys with a little
+// hue drift between them, because its towers are all the same concrete and only
+// vary by which way they face.
+const SKYLINE = ['#a9bcd6', '#b4c5db', '#9fb3cf', '#bccbe0', '#a3b8d2', '#aec0d8', '#b8c9de'];
+
 // Ordered back to front. Only the last layer is real, everything before it is
 // scenery that moves slower to sell distance.
 //
-// Distant layers are the pale ones. Air between you and a building eats its
-// contrast, so far buildings sit close to the sky colour and near ones go
-// almost black. Doing it the other way round makes the skyline read flat.
+// Depth is signalled by darkness, not by haze. That is the opposite of what
+// this used to do, and it was measured rather than guessed: sampling three
+// clusters of overlapping towers in the reference, the one behind is darker
+// every time, by fifteen to twenty percent of luminance. Washing the far layers
+// paler was atmospheric perspective, which is real over kilometres and wrong
+// over the few hundred metres a skyline like this actually spans.
 export const LAYERS = [
   {
     depth: 0.3,
-    width: [14, 30],
+    width: [14, 34],
     height: [30, 96],
-    gap: [4, 16], // packed tight, the way a real skyline crowds at distance
-    shade: '#9aa4c2',
-    palette: ['#9aa4c2', '#a5adc9', '#b2b6cd', '#929ebc', '#aab0c8', '#9fa8c6'],
-    // Almost everything back here is a tower, which is what a far skyline is.
+    gap: [0, 0], // packed shoulder to shoulder, the way the reference is
+    shade: '#8496b4',
+    palette: SKYLINE,
+    darken: 0.26,
     towerAbove: 50,
-    haze: 0.34,
+    haze: 0,
     anchors: false,
   },
   {
     depth: 0.62,
     width: [18, 40],
     height: [40, 118],
-    gap: [8, 24],
-    shade: '#9a8098',
-    palette: ['#94809f', '#a9868c', '#8a7ba4', '#b0918a', '#8e7f9c', '#a0839b'],
+    gap: [0, 0],
+    shade: '#93a5c1',
+    palette: SKYLINE,
+    darken: 0.13,
     towerAbove: 62,
-    haze: 0.15,
+    haze: 0,
     anchors: false,
   },
   {
     depth: 1,
-    // Narrower than they were. A skyline of wide slabs fills the frame with two
-    // buildings and reads as walls, and it also leaves whole stretches of
-    // street with nothing to aim at between one roof and the next.
     width: [16, 38],
     height: [52, 168],
-    gap: [12, 34],
+    gap: [0, 0],
     shade: '#a8563a',
-    // The vibrant end of the reference, the row that has to hold its own next
-    // to a bright red and blue sprite.
+    // The front rank keeps its colour. Painting this one blue grey too, which
+    // was the first attempt, turned the whole city into a single flat wall with
+    // no depth in it at all: the reference has a pale skyline *behind* a
+    // coloured front rank, and it is the contrast between the two that reads as
+    // distance, not the darkening on its own.
     palette: [
       '#c05a38', // rust
       '#d8963f', // mustard
@@ -70,8 +79,7 @@ export const LAYERS = [
       '#5b81a4', // slate blue
       '#b9a259', // sand
     ],
-    // The layer he swings on. Towers start higher here so there is a proper mix
-    // of blocks and towers at the height he actually flies.
+    darken: 0,
     towerAbove: 78,
     haze: 0,
     anchors: true,
@@ -95,13 +103,17 @@ function generateChunk(seed, layerIndex, chunkIndex, ground) {
   const end = start + CHUNK_WIDTH;
   const buildings = [];
 
-  let x = start + range(rng, 0, layer.gap[1]);
+  let x = start;
 
   while (x < end) {
-    const { width, height } = randomBuildingSize(rng, layer);
-    // Stop rather than overhang, so buildings in neighbouring chunks can never
-    // overlap and rooftops stay clean lines rather than stepped ones.
-    if (x + width > end) break;
+    let { width, height } = randomBuildingSize(rng, layer);
+
+    // The last one in a chunk is stretched to land exactly on the boundary.
+    // Stopping short instead, which is what this used to do, was invisible while
+    // buildings had gaps between them and becomes a hole in the wall the moment
+    // they touch. Stretching keeps chunks pure and never overlaps.
+    if (x + width + layer.width[0] > end) width = end - x;
+    if (width <= 0) break;
 
     buildings.push(makeBuilding(rng, layer, x, width, height, ground));
     x += width + range(rng, layer.gap[0], layer.gap[1]);
@@ -204,7 +216,13 @@ const SHORTEST_USEFUL = 22; // metres
 const COLUMN_COST = 1; // per metre between the anchor and the cursor, the unit
 const ABOVE_COST = 0.05; // per metre the anchor sits above where you pointed
 const UNDER_COST = 0.55; // per metre it sits below where you pointed
-const BEHIND_COST = 70; // swinging backwards kills the run, so it stays dear
+// Swinging backwards kills a run, but how badly depends on how far back it is.
+// A ledge five metres behind your shoulder is a shrug; one eighty metres behind
+// is the end of the run. A flat charge could not tell those apart, and once the
+// city was packed shoulder to shoulder there was always some well placed roof a
+// long way behind that beat everything ahead.
+const BEHIND_COST = 40; // just for being behind at all
+const BEHIND_RATE = 1; // and this much again per metre back
 const SHORT_COST = 3; // per metre under SHORTEST_USEFUL
 
 // The asymmetry between ABOVE_COST and UNDER_COST is the whole idea. Up is the
@@ -244,7 +262,8 @@ export function pickAnchor(city, from, target, maxRange, ground = 0, heading = 0
 
       let score = aimError(target, anchor);
 
-      if (forward !== 0 && (anchor.x - from.x) * forward < 0) score += BEHIND_COST;
+      const behind = (anchor.x - from.x) * forward;
+      if (forward !== 0 && behind < 0) score += BEHIND_COST + -behind * BEHIND_RATE;
       if (reach < SHORTEST_USEFUL) score += (SHORTEST_USEFUL - reach) * SHORT_COST;
 
       if (score < bestScore) {

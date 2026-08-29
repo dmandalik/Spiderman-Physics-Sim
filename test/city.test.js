@@ -101,11 +101,29 @@ test('aiming never returns a street level anchor', () => {
     const from = { x, y: 24 };
     const picked = pickAnchor(city, from, { x: x + 40, y: 6 }, 120, 0, 20);
 
-    // Shops top out around twenty metres, so anything below thirty came from
-    // scenery. Not 52 any more: a setback terrace on the shortest tower in the
-    // city sits at 51.6, just under where the buildings themselves start.
-    if (picked) assert.ok(picked.y > 30, `picked something ${picked.y.toFixed(0)} m up`);
+    // Anything under a podium roof came from scenery: an awning, a tree, a shop
+    // parapet. Towers now stand on a podium about nineteen metres high and its
+    // roof is a real ledge, so the old floor of thirty metres would fail on a
+    // perfectly good one. Fifteen is under every podium and over every shop.
+    if (picked) assert.ok(picked.y > 15, `picked something ${picked.y.toFixed(0)} m up`);
   }
+});
+
+// The podium is the reason a tower has anything to grab below its crown. It is
+// worth stating on its own, because the silhouette and the ledge finder used to
+// disagree about which row the roof of it was and the anchors quietly vanished
+// while the drawing stayed correct.
+test('a tower offers its podium roof as well as its crown', () => {
+  const city = createCity(20250806);
+  const towers = buildingsBetween(city, NEAR_LAYER, 0, 2000).filter((b) => b.kind === 'tower');
+
+  assert.ok(towers.length > 20, `only ${towers.length} towers to judge`);
+
+  const withLow = towers.filter((b) => b.anchors.some((a) => a.y < 30));
+  assert.ok(
+    withLow.length > towers.length * 0.8,
+    `only ${withLow.length} of ${towers.length} towers have anything under thirty metres`,
+  );
 });
 
 test('the street is the same city every time you walk it', () => {
@@ -271,7 +289,14 @@ test('parking the cursor under a tower grabs the roof above the frame', () => {
       const picked = pickAnchor(city, from, { x: want.x, y: from.y + WINDOW_TOP }, RANGE, 0, 30);
 
       cases += 1;
-      if (picked && picked.y >= want.y - 1) grabbed += 1;
+      // The bug was grabbing something low, or something on another building.
+      // Stated that way rather than as "the very topmost ledge", because a
+      // ziggurat's second terrace is five metres under its apex and picking it
+      // is a perfectly good answer: it is the tower he pointed at and it is well
+      // above the frame. Demanding the exact top ledge made this test turn on a
+      // hundredth of a point of aim score between two ledges in one column.
+      const overhead = picked && picked.y - from.y > WINDOW_TOP;
+      if (overhead && Math.abs(picked.x - want.x) <= 3) grabbed += 1;
     }
   }
 

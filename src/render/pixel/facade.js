@@ -46,16 +46,18 @@ export function facadePalette(face, time = timeOfDay()) {
     // hundred metres of it reading as graph paper is the band of brighter sky
     // sliding diagonally across it.
     i: time.sheen,
-    // Traced off the reference skyline. Its towers are a light body with
-    // *darker* window channels cut into it, which is the opposite polarity to a
-    // lit night tower and the thing that makes them read as daytime concrete
-    // rather than as glass with the lights on.
+    // Traced off the reference sheet. Its towers are a light body with *darker*
+    // windows cut into it, which is the opposite polarity to a lit night tower
+    // and the thing that makes them read as daytime concrete rather than as
+    // glass with the lights on.
     //
-    // The reference measures at 0.88 of the body's luminance, and asking for
-    // that ratio rather than a fixed mix is what keeps a rust tower as legible
-    // as a pale grey one.
-    j: mix(toRatio(face, time.shadow, 0.87), time.wash, time.washAmount * 0.5),
-    k: mix(toRatio(face, time.sunlight, 1.1), time.wash, time.washAmount * 0.5),
+    // Both numbers are measured. A window sits at 0.79 of the body's luminance
+    // and the parapet at 1.11, and asking for a ratio rather than a fixed mix is
+    // what keeps a rust tower as legible as a pale grey one: seventeen percent
+    // of the way toward the shadow is a wide gap on pale concrete and almost
+    // nothing on a colour that already sits near it.
+    j: mix(toRatio(face, time.shadow, 0.79), time.wash, time.washAmount * 0.5),
+    k: mix(toRatio(face, time.sunlight, 1.11), time.wash, time.washAmount * 0.5),
   };
 }
 
@@ -88,9 +90,14 @@ const ARCH = {
 // windows and the street looks abandoned.
 const shopLit = () => Math.max(timeOfDay().lit, 0.45);
 
-const CORNICE = 5; // rows a shop cap takes, including its dentils and shadow
-const PLINTH = 3; // rows of stonework at street level
-const COURSE = 5; // rows between the lines in brickwork
+// Written as metres rather than as a count of rows, which is what these used to
+// be. A row count is a metre figure in disguise: five rows was a metre of
+// cornice while a cell was 0.2 m, and the day the cell changed it silently
+// became two metres of it and swallowed the top storey of every shop.
+const CORNICE = cells(1); // a shop cap, including its dentils and its shadow
+const PLINTH = cells(0.6); // stonework at street level
+const COURSE = cells(1); // between the lines in brickwork
+const JOINT = cells(0.6); // between two openings, and at the ends of a run
 
 export function buildFacade(spec) {
   const kind = spec.kind || 'shop';
@@ -179,23 +186,22 @@ function block({ cols, rows, texture = 'brick', escape = true, rng = () => 0.5 }
 
   // A capping band rather than a moulded cornice. Anything fussier is invisible
   // at the height these stand at.
-  g.fill(0, 0, cols, 1, 'a');
-  g.fill(0, 1, cols, 2, 'e');
-  g.fill(0, 3, cols, 1, 'b');
+  g.fill(0, 0, cols, cells(0.8), 'e');
+  g.fill(0, cells(0.8), cols, 1, 'b');
 
-  const top = 5;
+  const top = cells(1);
   const bottom = rows - PLINTH;
   const storey = cells(STOREY.flat);
   const groundHeight = cells(STOREY.shopfront);
   const floors = Math.max(Math.floor((bottom - top - groundHeight) / storey), 1);
 
-  const winW = Math.min(cells(1.3), 8);
+  const winW = cells(1.2);
   const bays = layout(cols, winW);
 
   for (let floor = 0; floor < floors; floor += 1) {
-    const y = top + storey * floor + 3;
-    const h = storey - 7;
-    if (h < 4) break;
+    const y = top + storey * floor + cells(0.6);
+    const h = storey - cells(1.4);
+    if (h < 3) break;
 
     for (let i = 0; i < bays.count; i += 1) {
       const x = bays.start + i * (bays.width + bays.gap);
@@ -270,7 +276,11 @@ export function roofLedges({ kind, shape, cols, rows }) {
   // taper reads as several hundred one cell ledges all the way down.
   const minimum = cells(1.2);
 
-  for (let y = form.top + 1; y < form.lobbyTop; y += 1) {
+  // Inclusive of the podium roof, which is a step like any other and the lowest
+  // thing on a tower worth webbing. Stopping one short of it, which is what the
+  // exclusive bound used to do, threw away the only ledge under fifty metres on
+  // every tower in the city.
+  for (let y = form.top + 1; y <= form.podiumTop; y += 1) {
     const above = form.insetAt(y - 1);
     const here = form.insetAt(y);
     if (above - here < minimum) continue;
@@ -296,14 +306,29 @@ function tower({ cols, rows, shape = 'setback', rng = () => 0.5 }) {
   returns(g, form);
   crown(g, form, rng);
   roofPlant(g, form, rng);
-  lobby(g, form.lobbyTop, rows - form.lobbyTop, rng);
-  g.outline('a');
+  podium(g, form, rng);
+  // Not the near black keyline everything else gets. The reference's towers
+  // have no outline at all, only a slightly darker edge where the wall turns,
+  // and a black one round a pale grey tower is the single loudest thing on the
+  // skyline. This still separates two buildings that touch, which is the only
+  // job the outline actually has now the city is packed.
+  g.outline('b');
 
   return g.done();
 }
 
 // How much to pull each row in from both sides. Everything about a tower's
 // character lives in this one function.
+// Every tower in the reference stands on a podium wider than its shaft: four or
+// five storeys of stonework, a heavy cornice, and the tower set back off it.
+// Getting this wrong is what made the old towers read as slabs dropped on the
+// pavement, because a shaft that runs straight into the ground has no scale on
+// it anywhere a person could stand.
+const PODIUM = {
+  height: 19, // metres of it, about five tall storeys
+  setback: 2.2, // how far the shaft steps in off its edge, each side
+};
+
 function silhouette(shape, cols, rows) {
   // How far each setback pulls in. Deep enough to be a terrace somebody could
   // stand on rather than a moulding, because the anchors are read off this and
@@ -311,10 +336,26 @@ function silhouette(shape, cols, rows) {
   const step = Math.max(cells(2.4), 2);
   const limit = Math.floor(cols / 2) - 3;
   const clamp = (inset) => Math.max(Math.min(inset, limit), 0);
-  const base = { cols, rows, shape, lobbyTop: rows - cells(9), top: 0 };
+
+  // Only on a tower tall enough that the podium is a base rather than most of
+  // the building, and never so deep it eats the frontage on a narrow plot.
+  const podiumTop = rows - Math.min(cells(PODIUM.height), Math.round(rows * 0.3));
+  const setback = rows > cells(60) ? clamp(cells(PODIUM.setback)) : 0;
+
+  // Every inset is measured against the shaft, then the podium below it opens
+  // back out to the full plot. Wrapping it here rather than writing it into all
+  // five shapes is what keeps them each about their own silhouette.
+  //
+  // The podium's own top row counts as podium, not as shaft. That is the row the
+  // roof of it is, so getting it the other way round left the widest step on the
+  // building drawn but invisible to the ledge finder, and every tower's lowest
+  // anchor stayed up at the crown.
+  const onPodium = (insetAt) => (y) => (y >= podiumTop ? 0 : insetAt(y) + setback);
+
+  const base = { cols, rows, shape, podiumTop, setback, top: 0 };
 
   if (shape === 'slab') {
-    return { ...base, top: cells(2), insetAt: () => 0, steps: [] };
+    return { ...base, top: cells(2), insetAt: onPodium(() => 0), steps: [] };
   }
 
   if (shape === 'spire') {
@@ -325,7 +366,7 @@ function silhouette(shape, cols, rows) {
       ...base,
       top: 0,
       steps: [shoulder],
-      insetAt: (y) => (y >= shoulder ? 0 : clamp(Math.round(((shoulder - y) / shoulder) * (cols / 2)))),
+      insetAt: onPodium((y) => (y >= shoulder ? 0 : clamp(Math.round(((shoulder - y) / shoulder) * (cols / 2))))),
     };
   }
 
@@ -337,7 +378,7 @@ function silhouette(shape, cols, rows) {
       ...base,
       top: cells(2),
       steps: [cut + cells(2)],
-      insetAt: (y) => clamp(cut + cells(2) - y),
+      insetAt: onPodium((y) => clamp(cut + cells(2) - y)),
     };
   }
 
@@ -349,10 +390,10 @@ function silhouette(shape, cols, rows) {
       ...base,
       top: cells(1),
       steps: bands,
-      insetAt: (y) => {
+      insetAt: onPodium((y) => {
         for (let i = 0; i < bands.length; i += 1) if (y < bands[i]) return clamp(step * (bands.length - i));
         return 0;
-      },
+      }),
     };
   }
 
@@ -362,84 +403,70 @@ function silhouette(shape, cols, rows) {
     ...base,
     top: cells(2),
     steps: [neck, shoulder],
-    insetAt: (y) => clamp(y < neck ? step * 2 : y < shoulder ? step : 0),
+    insetAt: onPodium((y) => clamp(y < neck ? step * 2 : y < shoulder ? step : 0)),
   };
 }
 
-// The shaft, traced off the towers in the reference skyline.
+// The shaft, traced off the tall tower in the reference sheet.
 //
-// Measured rather than invented. Averaging the brightness of each column across
-// one of its towers gives a clean five pixel beat: two columns of light pier,
-// three of darker window channel, repeating the whole width. Averaging by row
-// gives a banded cornice at the top and a lighter floor division every few
-// storeys. Those are the only features on it.
+// Four numbers, all measured at the reference's own resolution rather than
+// guessed. Its shaft is eighty six art pixels across and holds seventeen
+// window columns, so the beat across is five cells: two of window, three of
+// pier. Averaging by row gives a floor of nine cells: seven of window and two
+// of sill. Nothing else is on it.
 //
-// The first version of this had mullions, transoms, spandrels and a reflected
-// sun band. All of that is finer than the reference and none of it survives at
-// the size a tower is actually seen, which is what made the skyline read as
-// fussy rather than as pixel art.
+// The version before this drew unbroken vertical channels with a one cell break
+// at each floor, and that one cell is the whole mistake. A window has to be a
+// separate rectangle with wall above and below it, or a tower is a barcode.
 const BEAT = {
-  pitch: 2.3, // metres from one pier to the next
-  pier: 0.9, // the lit face of it
-  band: 27, // metres between the light floor divisions
+  pitch: 2, // metres from one window to the next
+  window: 0.8, // and how much of that is glass
+  floor: 3.6, // metres per storey
+  sill: 0.8, // the solid band under each row of windows
 };
+
+// How many windows are lit, as a fraction of how lit the hour is. The reference
+// is a daytime sheet with about one window in seventy showing a light, and a
+// tower with one in twenty lit at noon reads as an office block on fire.
+const LIT_SHARE = 0.35;
 
 function curtainWall(g, form, rng) {
   const { cols } = g;
   const time = timeOfDay();
   const pitch = cells(BEAT.pitch);
-  const pier = cells(BEAT.pier);
-  const channel = pitch - pier;
-  const storey = cells(STOREY.office);
+  const winW = cells(BEAT.window);
+  const storey = cells(BEAT.floor);
+  const winH = Math.max(storey - cells(BEAT.sill), 2);
+  const edge = cells(1.2); // wall left at the corner, never glazed
 
-  const top = form.top + cells(4.4); // clear of the cornice
-  const bottom = form.lobbyTop;
+  const top = form.top + cells(6); // clear of the cornice
+  const bottom = form.podiumTop;
 
-  const within = (x, y) => {
+  // One column grid for the whole tower, centred on the plot and fixed for its
+  // full height. Laying the columns out per storey instead lets a setback shift
+  // the glazing sideways as it steps in, and the two halves of the building
+  // then read as two buildings.
+  const count = Math.max(Math.floor((cols - edge * 2 + (pitch - winW)) / pitch), 1);
+  const first = Math.round((cols - (count * pitch - (pitch - winW))) / 2);
+
+  // Lit windows are a small bright block inside a pane rather than the whole
+  // pane, which is what they are in the reference: a lit floor of an office is
+  // one room, not the whole elevation.
+  const lamp = time.lit > 0.3 ? 'h' : 'f';
+  const lampH = Math.min(Math.max(cells(1.2), 1), winH);
+
+  for (let y = top; y + winH <= bottom; y += storey) {
     const inset = form.insetAt(y);
-    return x >= inset + 1 && x + channel <= cols - inset - 1;
-  };
 
-  // Channels straight down the whole shaft. Drawing them as one long run rather
-  // than per storey is what gives the unbroken verticals the reference has.
-  for (let x = pier; x + channel <= cols; x += pitch) {
-    for (let y = top; y < bottom; y += 1) {
-      if (within(x, y)) g.fill(x, y, channel, 1, 'j');
+    for (let i = 0; i < count; i += 1) {
+      const x = first + i * pitch;
+      if (x < inset + edge || x + winW > cols - inset - edge) continue;
+
+      g.fill(x, y, winW, winH, 'j');
+      if (rng() < time.lit * LIT_SHARE) {
+        g.fill(x, y + Math.floor(rng() * (winH - lampH + 1)), winW, lampH, lamp);
+      }
     }
-  }
-
-  // Floor lines, cut across the channels only. This is the fine grain that was
-  // missing: in the reference each vertical is a column of dashes rather than
-  // one unbroken bar, and the breaks are the floors.
-  for (let y = top; y < bottom; y += storey) {
-    for (let x = pier; x + channel <= cols; x += pitch) {
-      if (within(x, y)) g.fill(x, y, channel, 1, 'd');
-    }
-  }
-
-  // Lit windows. One window tall rather than one storey, and pale by day: a
-  // saturated amber square at noon reads as a fault, not as an office.
-  // Warm once the lights are on, otherwise just a paler pane. A near white
-  // fleck at noon reads as a hole in the building.
-  const lamp = time.lit > 0.3 ? 'h' : 'e';
-  const winHeight = Math.max(storey - cells(1.9), 2);
-
-  for (let y = top + 1; y + winHeight < bottom; y += storey) {
-    for (let x = pier; x + channel <= cols; x += pitch) {
-      if (!within(x, y)) continue;
-      if (rng() > time.lit) continue;
-      g.fill(x, y, channel, winHeight, lamp);
-    }
-  }
-
-  // The floor divisions. One light row and one dark, no more: the reference has
-  // these every few storeys and they are barely there. Anything heavier turns
-  // the shaft into a ladder.
-  for (let y = top + cells(BEAT.band); y < bottom; y += cells(BEAT.band)) {
-    const inset = form.insetAt(y);
-    if (cols - inset * 2 < 4) continue;
-    g.fill(inset, y, cols - inset * 2, 1, 'k');
-    g.fill(inset, y + 1, cols - inset * 2, 1, 'c');
   }
 }
 
@@ -448,9 +475,9 @@ function curtainWall(g, form, rng) {
 // side and taking the building's edge with it.
 function returns(g, form) {
   const { cols } = g;
-  const edge = cells(0.7);
+  const edge = cells(1.2);
 
-  for (let y = form.top; y < form.lobbyTop; y += 1) {
+  for (let y = form.top; y < form.podiumTop; y += 1) {
     const inset = form.insetAt(y);
     if (cols - inset * 2 < 6) continue;
     // Sun from the left, so that return catches it and the far one does not.
@@ -484,16 +511,16 @@ function crown(g, form, rng) {
     }
   }
 
-  // The cornice, measured off the reference rather than designed. Averaging its
-  // towers by row gives light, three dark, two light, three dark, two light,
-  // and then the shaft begins. Five bands in about two metres.
+  // The crown, read straight off a vertical slice down the middle of the
+  // reference tower. From the top: a pale parapet, a short return to the body
+  // tone, a dark cornice band, one light course, and then the windows start.
+  // Four bands in about six metres, and that is the entire top of the building.
   if (form.shape !== 'spire') {
     const bands = [
-      ['k', 0.25],
-      ['c', 0.7],
-      ['k', 0.45],
-      ['c', 0.7],
-      ['k', 0.45],
+      ['k', 2.2],
+      ['d', 1],
+      ['j', 2],
+      ['k', 0.8],
     ];
 
     let y = form.top;
@@ -503,11 +530,21 @@ function crown(g, form, rng) {
       if (cols - inset * 2 >= 4) g.fill(inset, y, cols - inset * 2, height, tone);
       y += height;
     }
+
+    // Notches out of the parapet. The reference's flat topped towers all have
+    // them, and they are the one thing that stops a plain slab ending in a
+    // ruled line across the sky.
+    if (form.shape === 'slab' || form.shape === 'chamfer') {
+      const inset = form.insetAt(form.top + 1);
+      const notch = cells(1.6);
+      for (let x = inset + notch; x + notch < cols - inset; x += notch * 2) {
+        g.fill(x, form.top, notch, cells(0.8), 'j');
+      }
+    }
   }
 
   if (form.shape === 'deco') fins(g, form);
   if (form.shape === 'spire') mast(g, form, cells(9));
-  else if (form.shape !== 'deco') mast(g, form, cells(6));
 }
 
 // Vertical ribs up the crown, the way every nineteen thirties tower has them.
@@ -540,54 +577,104 @@ function mast(g, form, height) {
   }
 }
 
-// Cooling plant, a dish and an aerial. Nothing up here is webbable, so it is
-// free to be as cluttered as a real roof.
+// One cooling box on the roof, and only on a roof wide enough that it is not
+// the thing you notice about the building.
+//
+// The dish, the aerial and the aircraft mast that used to be here are gone.
+// None of the reference's flat topped towers has anything above the parapet at
+// all, and a mast on every one of them is the sort of detail that makes a
+// skyline look like it was assembled from a kit.
 function roofPlant(g, form, rng) {
-  if (form.shape === 'spire' || form.shape === 'chamfer') return;
+  if (form.shape !== 'slab' && form.shape !== 'setback') return;
+  if (rng() > 0.5) return;
 
   const y = form.top;
   const inset = form.insetAt(y + 2);
   const width = g.cols - inset * 2;
-  if (width < cells(4)) return;
+  if (width < cells(9)) return;
 
-  const boxW = cells(1.8);
-  const boxH = cells(1.4);
-  const left = inset + 2;
+  const boxW = cells(3.2);
+  const boxH = cells(2);
+  const left = inset + Math.round(width * 0.3);
 
-  g.fill(left, y - boxH, boxW, boxH, 'c');
-  g.fill(left, y - boxH, boxW, 1, 'e');
-  for (let i = 1; i < 4; i += 1) g.fill(left + Math.round((boxW * i) / 4), y - boxH + 2, 1, boxH - 3, 'b');
+  g.fill(left, y - boxH, boxW, boxH, 'j');
+  g.fill(left, y - boxH, boxW, 1, 'k');
+}
 
-  if (width > cells(7)) {
-    // A dish, which is the one curved thing on the whole building.
-    const cx = g.cols - inset - cells(2.2);
-    g.disc(cx, y - cells(1.2), cells(0.9), 'c');
-    g.fill(cx, y - cells(1.2), 1, cells(1.2), 'b');
+// The base the tower stands on: five storeys of stonework wider than the shaft,
+// a heavy cornice over them, tall bays between pilasters, and a door.
+//
+// Everything here is deliberately coarser than the shaft. It is the part you
+// actually swing past at head height, and the reference draws it the same way,
+// with a handful of big openings rather than a hundred small ones.
+function podium(g, form, rng) {
+  const { cols, rows } = g;
+  const top = form.podiumTop;
+  const height = rows - top;
+  if (height < cells(6)) return;
+
+  g.fill(0, top, cols, height, 'd');
+
+  // The cornice. A light slab that overhangs, then the line of shadow it casts,
+  // which is what makes the tower look set back rather than merely narrower.
+  const slab = cells(1.6);
+  g.fill(0, top, cols, slab, 'k');
+  g.fill(0, top + slab, cols, cells(0.8), 'j');
+
+  const bayTop = top + slab + cells(2);
+  const bayHeight = rows - bayTop - cells(1.6);
+  if (bayHeight < cells(4)) return;
+
+  // Pilasters every four metres or so, with the openings between them. Laid out
+  // by the same routine every other opening in the city uses, so the margins
+  // each side match instead of leaving a wide strip down one edge.
+  const bays = layout(cols, cells(4));
+  const doorBay = Math.floor((bays.count - 1) / 2);
+
+  for (let i = 0; i < bays.count; i += 1) {
+    const x = bays.start + i * (bays.width + bays.gap);
+    // The end bays are storeyed and the middle ones are one tall opening, which
+    // is exactly how the reference's podiums are arranged and the reason they
+    // read as a lobby with offices either side rather than as a garage door.
+    if (i === 0 || i === bays.count - 1) storeyedBay(g, x, bayTop, bays.width, bayHeight);
+    else tallBay(g, x, bayTop, bays.width, bayHeight);
+
+    if (i === doorBay && bays.width >= 3) {
+      const w = Math.max(bays.width - 2, 2);
+      g.fill(x + 1, rows - cells(3), w, cells(3), 'b');
+      g.fill(x + 1, rows - cells(3), w, 1, 'e');
+    }
+  }
+
+  // The plinth the whole thing sits on, so it meets the pavement with a line
+  // rather than just stopping.
+  g.fill(0, rows - 1, cols, 1, 'b');
+}
+
+// Four floors of small windows in one bay of the podium.
+function storeyedBay(g, x, y, w, h) {
+  const storey = Math.max(Math.floor(h / 4), 3);
+  const winW = cells(0.8);
+  const gap = cells(0.8);
+  const count = Math.max(Math.floor((w + gap) / (winW + gap)), 1);
+  const first = x + Math.floor((w - (count * (winW + gap) - gap)) / 2);
+
+  for (let row = 0; row + storey <= h; row += storey) {
+    for (let i = 0; i < count; i += 1) {
+      g.fill(first + i * (winW + gap), y + row, winW, storey - cells(0.8), 'j');
+    }
   }
 }
 
-// Tall glass, a canopy over the doors, and a dark band above it all.
-function lobby(g, y, h, rng) {
-  const { cols } = g;
+// One opening the full height of the podium, divided by mullions. This is the
+// two storey glass a real tower puts either side of its doors.
+function tallBay(g, x, y, w, h) {
+  g.fill(x, y, w, h, 'j');
 
-  g.fill(0, y, cols, 2, 'b');
-  g.fill(0, y + 2, cols, 1, 'a');
-  g.fill(0, y + 3, cols, h - 3, 'c');
-
-  const glassTop = y + 6;
-  const glassHeight = h - 10;
-  if (glassHeight < 6) return;
-
-  const bays = layout(cols, cells(2.2));
-  for (let i = 0; i < bays.count; i += 1) {
-    const x = bays.start + i * (bays.width + bays.gap);
-    window(g, x, glassTop, bays.width, glassHeight, true, false);
-    glazingBars(g, x, glassTop, bays.width, glassHeight);
-  }
-
-  // The canopy, which is the one thing that gives a tower a human sized door.
-  const canopy = Math.round(cols * 0.34);
-  g.fill(Math.round((cols - canopy) / 2), glassTop + Math.round(glassHeight * 0.45), canopy, 2, 'e');
+  const pitch = cells(1.6);
+  for (let m = pitch; m < w; m += pitch) g.fill(x + m, y, 1, h, 'd');
+  // A transom near the top, so the opening has a head to it.
+  g.fill(x, y + cells(3.2), w, 1, 'd');
 }
 
 // ---------------------------------------------------------------- shared
@@ -615,23 +702,23 @@ function wall(g, texture) {
 // teeth reads as a building.
 function cornice(g) {
   const { cols } = g;
+  const cap = Math.max(CORNICE - 2, 1);
 
-  g.fill(0, 0, cols, 1, 'a');
-  g.fill(0, 1, cols, 2, 'f');
-  g.fill(0, 3, cols, 1, 'e');
-  for (let x = 1; x < cols - 1; x += 2) g.set(x, 3, 'a');
-  g.fill(0, 4, cols, 1, 'b');
+  g.fill(0, 0, cols, 1, 'a'); // the keyline along the top
+  g.fill(0, 1, cols, cap, 'f');
+  for (let x = 1; x < cols - 1; x += 2) g.set(x, cap, 'a'); // the teeth
+  g.fill(0, CORNICE - 1, cols, 1, 'b'); // the shadow it throws
 }
 
 // One floor of arched windows, with a band under it.
 function upperStorey(g, y, h, rng) {
-  const bays = layout(g.cols, 7);
-  const winH = Math.min(h - 5, cells(2.4));
-  if (winH < 6 || bays.count < 1) return;
+  const bays = layout(g.cols, cells(1.4));
+  const winH = Math.min(h - cells(1), cells(2.2));
+  if (winH < 4 || bays.count < 1) return;
 
   for (let i = 0; i < bays.count; i += 1) {
     const x = bays.start + i * (bays.width + bays.gap);
-    window(g, x, y + 2, bays.width, winH, rng() < timeOfDay().lit, true);
+    window(g, x, y + 1, bays.width, winH, rng() < timeOfDay().lit, true);
   }
 
   // The storey band, which is what stops two floors reading as one tall wall.
@@ -645,14 +732,15 @@ function shopfront(g, y, h, rng) {
 
   // The fascia the shop name goes on. Dark, with the lettering only suggested,
   // because at this size real letters would be one cell each.
-  g.fill(0, y, cols, 3, 'b');
-  g.fill(0, y + 3, cols, 1, 'a');
-  for (let x = 3; x < cols - 3; x += 3) g.fill(x, y + 1, 2, 1, 'e');
+  const fascia = cells(0.8);
+  g.fill(0, y, cols, fascia, 'b');
+  g.fill(0, y + fascia, cols, 1, 'a');
+  for (let x = 2; x < cols - 2; x += 3) g.set(x, y + 1, 'e');
 
-  const top = y + 6;
-  const height = h - 7;
+  const top = y + fascia + cells(0.6);
+  const height = h - (top - y) - cells(0.4);
   const bays = layout(cols, cells(2));
-  if (height < 6 || bays.count < 1) return;
+  if (height < 5 || bays.count < 1) return;
 
   const doorBay = Math.min(bays.count - 1, Math.max(1, Math.floor(bays.count / 2)));
 
@@ -672,15 +760,16 @@ function shopfront(g, y, h, rng) {
 // block of flats, and under a townhouse.
 function groundFloor(g, y, h, rng) {
   const bays = layout(g.cols, cells(1.6));
-  const height = Math.min(h - 4, cells(2.6));
-  if (height < 5 || bays.count < 1) return;
+  const height = Math.min(h - cells(0.8), cells(2.4));
+  if (height < 4 || bays.count < 1) return;
 
   const doorBay = Math.min(bays.count - 1, Math.max(0, Math.floor((bays.count - 1) / 2)));
-  const top = y + h - height - 3;
+  const step = cells(0.6);
+  const top = y + h - height - step;
 
   for (let i = 0; i < bays.count; i += 1) {
     const x = bays.start + i * (bays.width + bays.gap);
-    if (i === doorBay) door(g, x, top, bays.width, height + 3, rng);
+    if (i === doorBay) door(g, x, top, bays.width, height + step, rng);
     else window(g, x, top, bays.width, height, rng() < timeOfDay().lit, false);
   }
 }
@@ -737,32 +826,25 @@ function window(g, x, y, w, h, lit, arched) {
     }
   }
 
-  // The keyline, one ring outside the silhouette, corners included so the arch
-  // never shows a stray diagonal gap.
-  for (let row = -1; row <= h; row += 1) {
-    for (let col = -1; col <= w; col += 1) {
-      if (inside(row, col)) continue;
-      const touches = inside(row - 1, col) || inside(row + 1, col)
-        || inside(row, col - 1) || inside(row, col + 1)
-        || inside(row - 1, col - 1) || inside(row - 1, col + 1)
-        || inside(row + 1, col - 1) || inside(row + 1, col + 1);
-      if (touches) g.set(x + col, y + row, 'a');
-    }
-  }
-
-  g.fill(x - 2, y + h + 1, w + 4, 1, 'e'); // sill
-  g.fill(x - 2, y + h + 2, w + 4, 1, 'b'); // its shadow
+  // A sill, and nothing else around it.
+  //
+  // There used to be a keyline one ring outside the frame as well. Two rings of
+  // dark is 0.8 m of joinery round a window now that a cell is 0.4, and on a
+  // nine metre shop it ate the wall between the openings until the whole facade
+  // was a dark grid with three panes in it. The frame alone already separates
+  // the glass from the wall, which is all the keyline was ever for.
+  g.fill(x - 1, y + h, w + 2, 1, 'e');
 }
 
 // A shop window is not one sheet of glass. The reference divides every one with
 // a transom near the top and a mullion or two down it, and those bars are most
 // of what tells you the thing on the ground floor is a shop.
 function glazingBars(g, x, y, w, h) {
-  if (w < 6 || h < 8) return;
+  if (w < 4 || h < 5) return;
 
-  g.fill(x + 1, y + Math.round(h * 0.28), w - 2, 1, 'b');
+  g.fill(x + 1, y + Math.round(h * 0.3), w - 2, 1, 'b');
 
-  const bays = w >= 12 ? 3 : 2;
+  const bays = w >= cells(2.4) ? 3 : 2;
   for (let i = 1; i < bays; i += 1) g.fill(x + Math.round((w * i) / bays), y + 1, 1, h - 2, 'b');
 }
 
@@ -770,12 +852,16 @@ function glazingBars(g, x, y, w, h) {
 // by dividing and truncating leaves a wide strip down one edge, which is the
 // first thing that makes a facade look generated.
 function layout(cols, want) {
-  const usable = cols - 6;
-  const count = Math.max(Math.floor(usable / (want + 3)), 1);
-  const width = Math.max(Math.min(want, Math.floor((usable - (count - 1) * 3) / count)), 3);
-  const gap = count > 1 ? Math.floor((usable - count * width) / (count - 1)) : 0;
+  const usable = cols - JOINT * 2;
+  const count = Math.max(Math.floor((usable + JOINT) / (want + JOINT)), 1);
+  const width = Math.max(Math.min(want, Math.floor((usable - (count - 1) * JOINT) / count)), 2);
 
-  return { width, gap, count, start: Math.floor((cols - (count * width + (count - 1) * gap)) / 2) };
+  // Whatever is left over goes into the margins, not into the gaps. Putting it
+  // in the gaps is what this used to do, and with only two bays on a nine metre
+  // shop it left three and a half metres of blank wall down the middle and the
+  // windows pushed out to the corners.
+  const span = count * width + (count - 1) * JOINT;
+  return { width, gap: JOINT, count, start: Math.floor((cols - span) / 2) };
 }
 
 function plinth(g) {

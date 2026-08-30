@@ -10,9 +10,14 @@ import {
   ACTION_SIZE,
   REWARD,
   EPISODE_SECONDS,
+  resolveReel,
+  slackIn,
 } from '../src/ml/env.js';
 import { createPolicy, blankParams, PARAM_COUNT, HIDDEN } from '../src/ml/policy.js';
 import { search, createSearch, cemStep } from '../src/ml/cem.js';
+import { createWorld, attachWeb, reelWeb, step } from '../src/physics/world.js';
+import { HEROIC, assistReel, heroicParams } from '../src/physics/assist.js';
+import { DEFAULT_PARAMS } from '../src/physics/world.js';
 
 const idle = () => [0, 0, -1, 0]; // never fires
 const hold = () => [0, 0, 1, 0]; // fires and never lets go
@@ -110,6 +115,83 @@ test('two short arcs are worth less than one long one', () => {
   const short = 2 * (Math.min(1.2, REWARD.arcCap) * perSecond - REWARD.web);
 
   assert.ok(long > short, `one 2.4 s arc pays ${long}, two 1.2 s arcs pay ${short}`);
+});
+
+// The three faults that made the first trained agent useless, each stated as
+// the thing it must not be able to do again.
+
+// It paid rope out on every one of its nine hundred decisions and never reeled
+// in once, because a slack rope is free fall and `assistForce` pushes him along
+// for as long as a web is attached without asking whether it is pulling. So
+// dangling beat letting go, and it never let go.
+test('hanging off a slack rope is worse than swinging on a taut one', () => {
+  const world = createWorld({ drag: HEROIC.drag, gravity: HEROIC.gravity });
+  world.hero.pos = { x: 0, y: 90 };
+  world.hero.vel = { x: 26, y: 0 };
+  attachWeb(world, { x: 40, y: 130 });
+
+  assert.ok(slackIn(world) < 0.01, 'a fresh web should be taut');
+
+  // Pay rope out for a second, which is what the first agent did constantly.
+  for (let i = 0; i < 240; i += 1) reelWeb(world, 1, 1 / 240);
+  assert.ok(slackIn(world) > 5, `paying out left only ${slackIn(world).toFixed(1)} m of slack`);
+
+  assert.ok(REWARD.slack > 0, 'loose rope is free again');
+});
+
+// Working the rope by hand replaces the assist rather than adding to it. The
+// trainer used to add, so the agent learned in a world where holding the rope
+// out still gathered slack in, and then played in one where it does not.
+test('the trainer and the game work the rope the same way', () => {
+  const world = createWorld({ drag: HEROIC.drag, gravity: HEROIC.gravity });
+  world.hero.pos = { x: 0, y: 90 };
+  world.hero.vel = { x: 26, y: 0 };
+  attachWeb(world, { x: 40, y: 130 });
+  const assist = { ...HEROIC, enabled: true };
+
+  // A hand on the rope wins outright, whatever the assist wanted.
+  assert.equal(resolveReel(world, assist, 1), 1);
+  assert.equal(resolveReel(world, assist, -1), -1);
+  // Hands off, and the assist has it.
+  assert.equal(resolveReel(world, assist, 0), assistReel(world, assist));
+  // No assist and no hand is no rope work at all.
+  assert.equal(resolveReel(world, { ...HEROIC, enabled: false }, 0), 0);
+});
+
+// An agent can be attached for a whole episode and swinging for less of it, so
+// the arc is measured in the time the rope was actually carrying him.
+//
+// Stated as an inequality rather than as a number, because how much slack a
+// given policy accumulates is a fact about its trajectory, not about the
+// accounting. Paying rope out at full rate still leaves the rope taut most of
+// the time, since he usually swings away from the anchor faster than fourteen
+// metres a second: the first agent's forty six percent of slack came from where
+// it chose to fly, not from the reel alone.
+test('an arc is measured in taut seconds, not in seconds attached', () => {
+  for (const behaviour of [hold, () => [0, 0, 1, 1], () => [0.5, 0.3, 1, 1]]) {
+    const run = runEpisode(behaviour, { seed: 1 });
+    assert.ok(
+      run.taut <= run.holding + 1e-9,
+      `counted ${run.taut.toFixed(2)} taut against ${run.holding.toFixed(2)} attached`,
+    );
+  }
+
+  const payingOut = runEpisode(() => [0, 0, 1, 1], { seed: 1 });
+  assert.ok(payingOut.holding > 0.99, 'it should be attached the whole time');
+  assert.ok(payingOut.taut < payingOut.holding, 'paying rope out cost it nothing at all');
+});
+
+// The complaint that started all of this: the agent was trained in one world
+// and flown in another. Stated against the physics the game actually builds for
+// heroic mode, so it holds whatever either side changes next.
+test('the trainer runs the same physics heroic mode runs', () => {
+  const game = heroicParams(DEFAULT_PARAMS);
+  const training = createEnv({ seed: 1 }).world.params;
+
+  for (const key of Object.keys(game)) {
+    assert.equal(training[key], game[key], `${key} differs between the game and training`);
+  }
+  assert.equal(training.webMode, 'rigid', 'the trained rope is not the rope in the game');
 });
 
 // ---- the policy

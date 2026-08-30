@@ -350,7 +350,15 @@ function silhouette(shape, cols, rows) {
   // roof of it is, so getting it the other way round left the widest step on the
   // building drawn but invisible to the ledge finder, and every tower's lowest
   // anchor stayed up at the crown.
-  const onPodium = (insetAt) => (y) => (y >= podiumTop ? 0 : insetAt(y) + setback);
+  //
+  // Clamped again after the setback, and that second clamp is not belt and
+  // braces. Each shape clamps its own inset to leave a few cells of building in
+  // the middle, and then this used to add the setback on top of that, which
+  // pushed the total past the limit and made the width negative. A row of
+  // negative width is not drawn at all, so the top of a tall spire simply was
+  // not there: eighteen empty rows, with the mast left hanging in the sky above
+  // where the point should have been.
+  const onPodium = (insetAt) => (y) => (y >= podiumTop ? 0 : clamp(insetAt(y) + setback));
 
   const base = { cols, rows, shape, podiumTop, setback, top: 0 };
 
@@ -364,7 +372,11 @@ function silhouette(shape, cols, rows) {
     const shoulder = Math.round(rows * 0.22);
     return {
       ...base,
-      top: 0,
+      // Room above the taper for the finial, which is what the mast needs in
+      // order to be standing on the building rather than floating over it. At a
+      // top of zero there was no space to draw the pole into and only the head
+      // came out, hanging in mid air.
+      top: cells(3.5),
       steps: [shoulder],
       insetAt: onPodium((y) => (y >= shoulder ? 0 : clamp(Math.round(((shoulder - y) / shoulder) * (cols / 2))))),
     };
@@ -561,20 +573,20 @@ function fins(g, form) {
 }
 
 // The pole, and the light on it that stops aircraft.
+//
+// It draws only as far up as there is room, so it always has its foot on the
+// stonework. The guy wires are gone: they were one cell every other row, which
+// at this cell size is not a wire but a handful of specks scattered around the
+// spire with nothing joining them to it.
 function mast(g, form, height) {
   const middle = Math.round(g.cols / 2);
   const top = Math.max(form.top - height, 0);
+  const pole = form.top - top;
+  if (pole < 3) return;
 
-  g.fill(middle - 1, top, 2, form.top - top, 'c');
+  g.fill(middle - 1, top, 2, pole, 'c');
   g.fill(middle - 2, top, 4, 2, 'b');
-  g.fill(middle - 1, top, 2, 1, 'h');
-
-  // Guy wires, one cell every other row, which is all a wire can be.
-  for (let y = top + 4; y < form.top; y += 2) {
-    const spread = Math.round((y - top) * 0.6);
-    g.set(middle - spread, y, 'b');
-    g.set(middle + spread, y, 'b');
-  }
+  g.fill(middle - 1, top, 2, 1, 'h'); // the light
 }
 
 // One cooling box on the roof, and only on a roof wide enough that it is not

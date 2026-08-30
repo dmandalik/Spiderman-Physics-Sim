@@ -417,7 +417,13 @@ function keylined(entry) {
     grid: cells.map((row) => row.join('')),
     com: { col: entry.com.col + 1, row: entry.com.row + 1 },
     wrist: { col: entry.wrist.col + 1, row: entry.wrist.row + 1 },
-    scaleRows: entry.scaleRows ?? source.length,
+    // Grown by the two rows the padding added.
+    //
+    // The scale reference counts rows against the drawn height, so padding the
+    // grid without padding this made every pose five to seven percent taller
+    // than it says it is. Two rows of air added to the picture have to be two
+    // rows added to what the picture is measured against.
+    scaleRows: (entry.scaleRows ?? source.length) + 2,
   };
 }
 

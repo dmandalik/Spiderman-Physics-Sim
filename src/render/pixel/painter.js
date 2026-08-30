@@ -35,7 +35,18 @@ export function poseCell(poseName) {
 export function drawPixelHero(ctx, camera, pose, poseName) {
   const entry = POSES[poseName] || POSES.neutral;
   const at = worldToScreen(camera, pose.pos);
-  const cell = Math.max(cellSize(entry) * camera.zoom, 1);
+
+  // The true size of one of his art pixels on screen, and it is allowed to be
+  // less than a whole one.
+  //
+  // This used to be floored at a pixel, and the floor was applied to the spacing
+  // between blocks as well as to their size, which is the bug: the camera pulls
+  // back as he speeds up, and below about five and three quarter pixels to the
+  // metre he stopped shrinking altogether and held at a fixed forty nine pixels
+  // while the city carried on shrinking around him. Eighteen percent too big at
+  // full speed, and worst exactly when the camera is widest, which is when a
+  // still of the thing gets taken.
+  const cell = cellSize(entry) * camera.zoom;
 
   ctx.save();
   ctx.translate(at.x, at.y);
@@ -46,7 +57,13 @@ export function drawPixelHero(ctx, camera, pose, poseName) {
 
   // Cells overlap by a hair. Without it, rotation leaves hairline seams where
   // neighbouring edges no longer land on the same device pixel.
-  const size = cell + 0.6;
+  //
+  // The overlap is a fraction of a cell rather than a flat six tenths of a
+  // pixel, because a flat one is nothing at all on a big cell and most of the
+  // block on a small one. The floor is here instead of on the spacing: a block
+  // never drops below a pixel, so nothing disappears at speed, but the gaps
+  // between them stay honest, so the figure as a whole is the size it should be.
+  const size = Math.max(cell + Math.min(0.6, cell * 0.35), 1);
 
   for (let row = 0; row < entry.grid.length; row += 1) {
     const line = entry.grid[row];

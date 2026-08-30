@@ -14,6 +14,7 @@ import { createTimeButton } from './ui/timeButton.js';
 import { createTitle, createHints } from './ui/chrome.js';
 import { labDefaults, modeSettings } from './physics/tunables.js';
 import { loadAgent, createPilot } from './ml/agent.js';
+import { setTimeOfDay } from './world/daylight.js';
 import { resolveReel } from './ml/env.js';
 
 const ZERO = { x: 0, y: 0 };
@@ -76,6 +77,13 @@ const seed = Number(new URLSearchParams(location.search).get('seed')) || undefin
 // at three hundred and fifty pixels wide is unreadable and the whole surface is
 // a link to somewhere it is readable.
 const embedded = new URLSearchParams(location.search).get('embed') === '1';
+
+// A page embedding the sim can match it to its own theme: ?time=day opens in
+// daylight, ?time=night under stars. Applied before the city exists so the
+// first sprite is painted under the right sky; unknown names are ignored and
+// leave the usual evening.
+const requestedTime = new URLSearchParams(location.search).get('time');
+if (requestedTime) setTimeOfDay(requestedTime);
 
 const world = createWorld();
 const city = createCity(seed);
@@ -307,8 +315,23 @@ canvas.addEventListener('pointerleave', () => {
 
 // An embed flies itself. It waits for the weights, then never gives the keyboard
 // or the pointer a say, so it cannot be left in a state nobody asked for by a
-// stray click from the page around it.
-if (embedded) toggleAgent();
+// stray click from the page around it. Time runs a fifth fast there: at a card's
+// quarter zoom an honest second reads as slow motion, and the bump goes in after
+// toggleAgent because setMode('heroic') inside it rewrites every param.
+if (embedded) {
+  toggleAgent().then(() => {
+    world.params.timeScale = 1.2;
+  });
+}
+
+// The page around an embed can retint the sim as its own theme changes, without
+// a reload. Same origin only, and setTimeOfDay ignores names it does not know.
+window.addEventListener('message', (event) => {
+  if (event.origin !== location.origin) return;
+  if (event.data?.type !== 'timeofday') return;
+  setTimeOfDay(event.data.value);
+  repaintCity(city);
+});
 
 window.addEventListener('keydown', (e) => {
   if (embedded) return;

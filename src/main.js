@@ -2,7 +2,7 @@
 // physics to a variable rate display.
 
 import { createWorld, step, attachWeb, releaseWeb, reelWeb, DEFAULT_PARAMS } from './physics/world.js';
-import { assistForce, assistReel, assistReach, HEROIC } from './physics/assist.js';
+import { assistForce, assistReel, assistReach, heroicParams, HEROIC } from './physics/assist.js';
 import { lerp } from './physics/vec.js';
 import { createStepper } from './loop.js';
 import { createCity, pickAnchor, repaintCity } from './world/city.js';
@@ -14,6 +14,7 @@ import { createTimeButton } from './ui/timeButton.js';
 import { createTitle, createHints } from './ui/chrome.js';
 import { labDefaults } from './physics/tunables.js';
 import { loadAgent, createPilot } from './ml/agent.js';
+import { resolveReel } from './ml/env.js';
 import { createStage } from './render/three/stage.js';
 import { createCharacter } from './render/three/character.js';
 
@@ -70,12 +71,11 @@ const controls = createControls(document.getElementById('lab'), lab, resetLab);
 createTimeButton(document.getElementById('corner'), () => repaintCity(city));
 
 // The last two bits of smooth type on the screen, redrawn in the bitmap font.
-// The subtitle says what the sim is for rather than making a joke about it.
-// Deliberately "built for" and not "trained by": the environment is
-// deterministic, fixed step and runs headless at about twenty thousand times
-// real time, which is the part that is true today. The line gets to claim a
-// trained agent when there is one.
-createTitle(document.querySelector('.title'), 'Spider Swing', 'Rope physics, built for reinforcement learning');
+// The subtitle says what the sim is rather than making a joke about it, and it
+// now claims a trained agent because there is one: agent.json, four hundred and
+// odd swings an episode, press A to watch it fly. The line read "built for
+// reinforcement learning" while that was still only a promise.
+createTitle(document.querySelector('.title'), 'Spider Swing', 'Rope physics, played by an agent trained with RL');
 createHints(document.querySelector('.hints'), [
   { keys: ['Click'], text: 'web' },
   { keys: ['W', 'S'], text: 'reel' },
@@ -142,15 +142,11 @@ function applyMode() {
     return;
   }
 
-  world.params = {
-    ...DEFAULT_PARAMS,
-    // Real air is thick enough to matter. Heroic air is not, heroic gravity
-    // pulls harder so the falls do not float, and the heroic clock runs a
-    // little fast so an arc does not outstay its welcome.
-    ...(mode === 'heroic'
-      ? { drag: HEROIC.drag, gravity: HEROIC.gravity, timeScale: HEROIC.timeScale }
-      : {}),
-  };
+  // Real air is thick enough to matter. Heroic air is not, heroic gravity pulls
+  // harder so the falls do not float, and the heroic clock runs a little fast so
+  // an arc does not outstay its welcome. All three come from one place, which
+  // the trainer reads too.
+  world.params = mode === 'heroic' ? heroicParams(DEFAULT_PARAMS) : { ...DEFAULT_PARAMS };
 }
 
 function assistSettings() {
@@ -280,7 +276,7 @@ function frame(now) {
     const settings = assistSettings();
     const reel = pilot ? pilot.reel : reelDirection;
     world.applied = settings.enabled ? assistForce(world, settings) : ZERO;
-    reelWeb(world, reel || (settings.enabled ? assistReel(world, settings) : 0), dt);
+    reelWeb(world, resolveReel(world, settings, reel), dt);
     step(world, dt);
 
     trailClock += dt;

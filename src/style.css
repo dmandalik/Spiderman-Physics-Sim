@@ -432,3 +432,71 @@ kbd {
 .lab {
   scrollbar-width: none;
 }
+
+/* ---------------------------------------------------------------- embedded
+
+   The version that sits in a card on another page.
+
+   Everything that is there to be read or pressed goes, because at the size a
+   card gives it none of it is legible and none of it is usable: a dashboard of
+   twenty five readouts at three hundred and fifty pixels wide is texture, not
+   information. What is left is the simulation itself, flying, and a link. */
+
+.embedLink,
+.embedTag {
+  display: none;
+}
+
+body.embed .embedTag {
+  position: fixed;
+  top: 6px;
+  right: 8px;
+  z-index: 4;
+  display: block;
+  padding: 2px 6px;
+  background: rgba(6, 10, 24, 0.55);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: rgba(232, 238, 255, 0.5);
+  pointer-events: none;
+}
+
+body.embed .title,
+body.embed .hud,
+body.embed .lab,
+body.embed .corner,
+body.embed .hints {
+  display: none;
+}
+
+body.embed .embedLink {
+  position: fixed;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  padding: 10px 12px;
+  text-decoration: none;
+  /* No hit testing to steal, no cursor change until it is hovered: the card
+     should read as a picture that happens to be alive, and only then as a door. */
+  background: transparent;
+}
+
+body.embed .embedLink span {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(232, 238, 255, 0.55);
+  background: rgba(6, 10, 24, 0.55);
+  padding: 4px 7px;
+  opacity: 0;
+  transition: opacity 140ms ease;
+}
+
+body.embed .embedLink:hover span,
+body.embed .embedLink:focus-visible span {
+  opacity: 1;
+}

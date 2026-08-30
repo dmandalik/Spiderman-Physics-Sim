@@ -15,8 +15,6 @@ import { createTitle, createHints } from './ui/chrome.js';
 import { labDefaults, modeSettings } from './physics/tunables.js';
 import { loadAgent, createPilot } from './ml/agent.js';
 import { resolveReel } from './ml/env.js';
-import { createStage } from './render/three/stage.js';
-import { createCharacter } from './render/three/character.js';
 
 const ZERO = { x: 0, y: 0 };
 
@@ -32,29 +30,52 @@ const ctx = canvas.getContext('2d');
 // deleted, so the two can be compared without digging through history.
 const renderer = new URLSearchParams(location.search).get('render') === '3d' ? '3d' : 'pixel';
 
-const stage = renderer === '3d' ? tryStage() : null;
-
-// Starts as the mannequin and swaps itself for the rigged mesh the moment one
-// finishes loading, so the page is never waiting on an asset to be playable.
+// Both filled in only if the rigged renderer is asked for.
+let stage = null;
 let character = null;
-if (stage) {
-  createCharacter().then((loaded) => {
-    character = loaded;
-    stage.scene.add(character.object);
-  });
-}
 
-function tryStage() {
+// Loaded on demand rather than imported at the top of the file.
+//
+// three.js is one and a third megabytes and the pixel renderer, which is what
+// everybody gets, never touches a line of it. A plain import at the top would
+// still fetch and parse all of it before the first frame, so every visitor paid
+// for a renderer hidden behind a query string they will never type. Behind a
+// dynamic import it costs nothing at all unless somebody asks for it.
+if (renderer === '3d') loadStage();
+
+async function loadStage() {
   try {
-    return createStage(document.getElementById('stage3d'));
+    const [{ createStage }, { createCharacter }] = await Promise.all([
+      import('./render/three/stage.js'),
+      import('./render/three/character.js'),
+    ]);
+
+    stage = createStage(document.getElementById('stage3d'));
+    resize();
+    // Starts as the mannequin and swaps itself for the rigged mesh the moment
+    // one finishes loading, so the page is never waiting on an asset.
+    character = await createCharacter();
+    stage.scene.add(character.object);
   } catch (error) {
+    // If WebGL is unavailable the flat painter takes over, so the page still
+    // runs rather than showing a city with nobody in it.
     console.warn('no webgl, falling back to the flat character', error);
-    return null;
+    stage = null;
   }
 }
 
 // ?seed=123 gives a different city. Same seed, same skyline, every time.
 const seed = Number(new URLSearchParams(location.search).get('seed')) || undefined;
+
+// ?embed=1 is the version that sits in a card on a web page.
+//
+// It is the same simulation, not a cut down copy of it, and that is the point:
+// what it shows is the trained policy flying the real physics rather than a
+// looping recording of one. What changes is only what is on top of it. Nothing
+// to read, nothing to press, no invitation to play, because a panel of readouts
+// at three hundred and fifty pixels wide is unreadable and the whole surface is
+// a link to somewhere it is readable.
+const embedded = new URLSearchParams(location.search).get('embed') === '1';
 
 const world = createWorld();
 const city = createCity(seed);
@@ -77,6 +98,28 @@ const hud = createHud(document.getElementById('hud'));
 // an experiment.
 const lab = labDefaults();
 const controls = createControls(document.getElementById('lab'), lab, resetLab);
+if (embedded) document.body.classList.add('embed');
+
+// The live counter in the corner of an embed.
+//
+// Deliberately the two numbers that say what this is: how fast he is going, and
+// how many arcs the policy has flown since the page loaded. A card that shows a
+// figure moving could be a video; a card showing a swing count that goes up
+// cannot be.
+const embedTag = document.getElementById('embedTag');
+let embedSwings = 0;
+let embedWasAttached = false;
+
+function updateEmbedTag() {
+  if (!embedded || !embedTag) return;
+
+  const attached = world.web.attached;
+  if (attached && !embedWasAttached) embedSwings += 1;
+  embedWasAttached = attached;
+
+  const speed = Math.round(Math.hypot(world.hero.vel.x, world.hero.vel.y));
+  embedTag.textContent = `${speed} m/s · ${embedSwings} swing${embedSwings === 1 ? '' : 's'}`;
+}
 // Changing the hour changes colours that are baked into the sprites, so every
 // one of them is dropped and rebuilt. The budget keeps that off the frame.
 createTimeButton(document.getElementById('corner'), () => repaintCity(city));
@@ -88,14 +131,14 @@ createTimeButton(document.getElementById('corner'), () => repaintCity(city));
 // reinforcement learning" while that was still only a promise.
 createTitle(document.querySelector('.title'), 'Spider Swing', 'Rope physics, played by an agent trained with RL');
 createHints(document.querySelector('.hints'), [
+  { keys: ['A'], text: 'agent flies' },
+  { keys: ['L'], text: 'lab' },
+  { keys: ['M'], text: 'mode' },
   { keys: ['Click'], text: 'web' },
   { keys: ['W', 'S'], text: 'reel' },
   { keys: ['Space'], text: 'toggle' },
-  { keys: ['M'], text: 'mode' },
-  { keys: ['L'], text: 'lab' },
   { keys: ['H'], text: 'hide' },
   { keys: ['R'], text: 'reset' },
-  { keys: ['A'], text: 'agent' },
 ]);
 
 // The trained agent, once it has been asked for. Null until then, so a build
@@ -241,21 +284,31 @@ function shootWeb() {
 }
 
 canvas.addEventListener('pointermove', (e) => {
+  if (embedded) return;
   pointer = { x: e.offsetX, y: e.offsetY };
 });
 
 canvas.addEventListener('pointerdown', (e) => {
+  if (embedded) return;
   canvas.setPointerCapture(e.pointerId);
   pointer = { x: e.offsetX, y: e.offsetY };
   shootWeb();
 });
 
-canvas.addEventListener('pointerup', () => releaseWeb(world));
+canvas.addEventListener('pointerup', () => {
+  if (!embedded) releaseWeb(world);
+});
 canvas.addEventListener('pointerleave', () => {
   pointer = null;
 });
 
+// An embed flies itself. It waits for the weights, then never gives the keyboard
+// or the pointer a say, so it cannot be left in a state nobody asked for by a
+// stray click from the page around it.
+if (embedded) toggleAgent();
+
 window.addEventListener('keydown', (e) => {
+  if (embedded) return;
   if (e.code === 'KeyW' || e.code === 'ArrowUp') reelDirection = -1;
   if (e.code === 'KeyS' || e.code === 'ArrowDown') reelDirection = 1;
   if (e.code === 'KeyR') reset();
@@ -367,6 +420,7 @@ function frame(now) {
   }
 
   hud.update(world, frameTime, pilot ? 'agent' : mode);
+  updateEmbedTag();
   requestAnimationFrame(frame);
 }
 

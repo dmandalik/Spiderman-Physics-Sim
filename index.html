@@ -3,7 +3,8 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>Spider Swing</title>
+    <title>Spider Swing — rope physics and a policy trained to fly it</title>
+    <meta name="description" content="A web swinging physics simulator: rigid rope constraints, quadratic drag and a fixed timestep solver, with a policy trained by cross entropy search to fly it. Zero dependencies." />
     <link rel="stylesheet" href="src/style.css" />
   </head>
   <body>
@@ -26,14 +27,28 @@
     <div id="corner" class="corner"></div>
 
     <footer class="hints">
+      <span><kbd>A</kbd> let the trained agent fly it</span>
+      <span><kbd>L</kbd> lab mode</span>
+      <span><kbd>M</kbd> real, heroic, lab</span>
       <span><kbd>Hold click</kbd> shoot a web</span>
       <span><kbd>W</kbd> <kbd>S</kbd> reel in and out</span>
       <span><kbd>Space</kbd> toggle web</span>
-      <span><kbd>M</kbd> real, heroic, lab</span>
-      <span><kbd>L</kbd> lab mode</span>
       <span><kbd>H</kbd> hide readouts</span>
       <span><kbd>R</kbd> reset</span>
     </footer>
+
+    <!-- The one thing an embed says about itself. Same idea as a generation
+         counter on a training loop: a number that changes is the difference
+         between something running and a recording of something that ran. -->
+    <div class="embedTag" id="embedTag" aria-hidden="true"></div>
+
+    <!-- Only ever visible in an embed, where the whole surface is a link through
+         to the page you can actually use. Written here rather than created from
+         script so that it is a real anchor: it works before the module loads,
+         it opens in a new tab from inside an iframe, and a crawler can see it. -->
+    <a class="embedLink" href="./" target="_blank" rel="noopener">
+      <span>Open the simulator</span>
+    </a>
 
     <script type="module" src="src/main.js"></script>
   </body>

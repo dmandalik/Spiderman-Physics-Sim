@@ -21,11 +21,15 @@ export function createCamera(pos = vec(0, 70)) {
   return { pos, zoom: BASE_ZOOM, width: 1, height: 1 };
 }
 
-export function updateCamera(camera, hero, dt, ground = 0) {
+export function updateCamera(camera, hero, dt, ground = 0, zoomScale = 1) {
   const speed = Math.hypot(hero.vel.x, hero.vel.y);
 
   // Zoom falls off with speed and flattens out, so it never keeps shrinking.
-  const wanted = Math.max(BASE_ZOOM / (1 + speed / 55), MIN_ZOOM);
+  // zoomScale pulls the whole range back for the embed, where a card a hundred
+  // pixels tall shows ten metres of world at full zoom, which is a knee, not a
+  // city. The pixel-grid alignment argument for 10 and 5 is knowingly given up
+  // there: at card size the skyline matters more than cell crispness.
+  const wanted = Math.max((BASE_ZOOM * zoomScale) / (1 + speed / 55), MIN_ZOOM * zoomScale);
 
   let targetX = hero.pos.x + hero.vel.x * LOOKAHEAD;
   let targetY = hero.pos.y + hero.vel.y * LOOKAHEAD * 0.5;

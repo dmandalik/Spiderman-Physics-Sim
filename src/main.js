@@ -80,6 +80,9 @@ const embedded = new URLSearchParams(location.search).get('embed') === '1';
 const world = createWorld();
 const city = createCity(seed);
 const camera = createCamera();
+// An embed opens at its resting zoom rather than lerping out from full, so the
+// first frame a visitor sees is already the wide one.
+if (embedded) camera.zoom = 2.5;
 const advance = createStepper();
 const hud = createHud(document.getElementById('hud'));
 
@@ -401,7 +404,7 @@ function frame(now) {
   const heroPos = lerp(world.hero.prevPos, world.hero.pos, alpha);
   const dt = Math.min(frameTime, 0.1);
 
-  updateCamera(camera, world.hero, dt, world.ground);
+  updateCamera(camera, world.hero, dt, world.ground, embedded ? 0.25 : 1);
 
   const pose = drawScene(ctx, world, camera, {
     mode: renderer,

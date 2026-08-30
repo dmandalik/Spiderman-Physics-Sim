@@ -1,8 +1,8 @@
 // Wiring. Canvas setup, input, and the frame loop that ties the fixed timestep
 // physics to a variable rate display.
 
-import { createWorld, step, attachWeb, releaseWeb, reelWeb, DEFAULT_PARAMS } from './physics/world.js';
-import { assistForce, assistReel, assistReach, heroicParams, HEROIC } from './physics/assist.js';
+import { createWorld, step, attachWeb, releaseWeb, reelWeb } from './physics/world.js';
+import { assistForce, assistReel, assistReach } from './physics/assist.js';
 import { lerp } from './physics/vec.js';
 import { createStepper } from './loop.js';
 import { createCity, pickAnchor, repaintCity } from './world/city.js';
@@ -12,7 +12,7 @@ import { createHud } from './ui/hud.js';
 import { createControls } from './ui/controls.js';
 import { createTimeButton } from './ui/timeButton.js';
 import { createTitle, createHints } from './ui/chrome.js';
-import { labDefaults } from './physics/tunables.js';
+import { labDefaults, modeSettings } from './physics/tunables.js';
 import { loadAgent, createPilot } from './ml/agent.js';
 import { resolveReel } from './ml/env.js';
 import { createStage } from './render/three/stage.js';
@@ -62,8 +62,19 @@ const camera = createCamera();
 const advance = createStepper();
 const hud = createHud(document.getElementById('hud'));
 
-// The lab's own copy of every number, so switching away and back keeps whatever
-// you set up. Declared before the panel because the panel writes into it.
+// The lab's own copy of every number. Declared before the panel because the
+// panel writes into it, and mutated in place from then on, never replaced: the
+// solver holds this exact object while you are in lab mode and the controls
+// close over it, so handing either of them a new one would leave them reading
+// the old.
+//
+// It is reloaded from whichever mode you opened it from, which is a deliberate
+// reversal. It used to persist, so that switching away and back kept whatever
+// you had set up, and the cost of that was worse: opening the lab from heroic
+// showed you real gravity and thin heroic air together, a world you had not
+// been in and could not get back to. Starting from where you were is the more
+// useful of the two, and the price is that a trip out to heroic and back loses
+// an experiment.
 const lab = labDefaults();
 const controls = createControls(document.getElementById('lab'), lab, resetLab);
 // Changing the hour changes colours that are baked into the sprites, so every
@@ -128,30 +139,21 @@ let reelDirection = 0; // -1 reels in, +1 pays out
 const MODES = ['real', 'heroic', 'lab'];
 let mode = 'real';
 
-const REAL_ASSIST = { ...HEROIC, enabled: false };
-const HEROIC_ASSIST = { ...HEROIC, enabled: true };
-
 let lastFrame = performance.now();
 
 // What the solver reads this frame. Assigning the whole object rather than
 // copying values across is what makes a slider take effect immediately: the lab
 // panel writes into the very object the solver is about to read.
 function applyMode() {
-  if (mode === 'lab') {
-    world.params = lab.params;
-    return;
-  }
-
   // Real air is thick enough to matter. Heroic air is not, heroic gravity pulls
   // harder so the falls do not float, and the heroic clock runs a little fast so
-  // an arc does not outstay its welcome. All three come from one place, which
-  // the trainer reads too.
-  world.params = mode === 'heroic' ? heroicParams(DEFAULT_PARAMS) : { ...DEFAULT_PARAMS };
+  // an arc does not outstay its welcome. All of that lives in modeSettings,
+  // which the trainer reads too.
+  world.params = mode === 'lab' ? lab.params : modeSettings(mode).params;
 }
 
 function assistSettings() {
-  if (mode === 'lab') return lab.assist;
-  return mode === 'heroic' ? HEROIC_ASSIST : REAL_ASSIST;
+  return mode === 'lab' ? lab.assist : modeSettings(mode).assist;
 }
 
 function resize() {
@@ -236,8 +238,20 @@ window.addEventListener('keyup', (e) => {
 new ResizeObserver(resize).observe(canvas);
 
 function setMode(next) {
+  // Opening the lab loads whatever you were just flying, so the first thing you
+  // see is the world you were in rather than a different one. Assigned into the
+  // existing objects rather than over them, because the solver and the panel are
+  // both holding references to these.
+  if (next === 'lab' && mode !== 'lab') {
+    const from = modeSettings(mode);
+    Object.assign(lab.params, from.params);
+    Object.assign(lab.assist, from.assist);
+  }
+
   mode = next;
   applyMode();
+  // show() refreshes the panel on the way in, so the sliders land on whatever
+  // was just loaded rather than on where they were left last time.
   controls.show(mode === 'lab');
 }
 

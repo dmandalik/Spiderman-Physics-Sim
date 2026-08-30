@@ -11,7 +11,7 @@
 // settings, which are not physics so much as what he is doing with his arms.
 
 import { DEFAULT_PARAMS } from './world.js';
-import { HEROIC } from './assist.js';
+import { HEROIC, heroicParams } from './assist.js';
 
 export const TUNABLES = [
   // ---- the world he is in
@@ -129,6 +129,23 @@ export const PRESETS = [
   { name: 'Vacuum', values: { gravity: 9.81, drag: 0, mass: 75 } },
   { name: 'Treacle', values: { gravity: 9.81, drag: 6, mass: 75 } },
 ];
+
+// What a mode actually is, as plain data: the world its solver reads and the
+// assist settings that go with it.
+//
+// Written here rather than in the wiring because two separate things need it
+// and they must agree. The game switches the solver onto it, and the lab loads
+// it as a starting point when you open the panel from that mode. A second copy
+// of "what heroic means" is exactly the sort of thing that drifts.
+//
+// Copies every time, so nothing downstream can edit the definitions by holding
+// on to what it was handed.
+export function modeSettings(mode) {
+  return {
+    params: mode === 'heroic' ? heroicParams(DEFAULT_PARAMS) : { ...DEFAULT_PARAMS },
+    assist: { ...HEROIC, enabled: mode === 'heroic' },
+  };
+}
 
 // A fresh set of everything the lab can change, at the values the real
 // simulation uses. Copies, so dragging a slider can never edit the defaults.

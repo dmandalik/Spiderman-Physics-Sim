@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  modeSettings,
   TUNABLES,
   PRESETS,
   PRESET_KEYS,
@@ -11,7 +12,7 @@ import {
   tunableActive,
 } from '../src/physics/tunables.js';
 import { DEFAULT_PARAMS, createWorld, step, attachWeb } from '../src/physics/world.js';
-import { HEROIC } from '../src/physics/assist.js';
+import { HEROIC, heroicParams } from '../src/physics/assist.js';
 import { terminalSpeed, swingPeriod } from '../src/physics/metrics.js';
 import { vec } from '../src/physics/vec.js';
 
@@ -218,4 +219,84 @@ test('but mass does not drop out once there is air', () => {
   };
 
   assert.ok(run(150) < run(50) - 5, 'a heavier body should fall faster through air');
+});
+
+// ---- what a mode is
+
+// The lab opens on whatever you were just flying. That only works if there is
+// one description of each mode, and both the solver and the panel read it.
+test('every mode describes a whole world and an assist to go with it', () => {
+  for (const mode of ['real', 'heroic']) {
+    const { params, assist } = modeSettings(mode);
+    for (const key of Object.keys(DEFAULT_PARAMS)) {
+      assert.notEqual(params[key], undefined, `${mode} has no ${key}`);
+    }
+    for (const key of Object.keys(HEROIC)) {
+      assert.notEqual(assist[key], undefined, `${mode} assist has no ${key}`);
+    }
+    assert.equal(typeof assist.enabled, 'boolean', `${mode} does not say whether the assist is on`);
+  }
+});
+
+test('real is the honest simulation and heroic is the heroic one', () => {
+  const real = modeSettings('real');
+  const heroic = modeSettings('heroic');
+
+  assert.deepEqual(real.params, { ...DEFAULT_PARAMS });
+  assert.equal(real.assist.enabled, false);
+
+  assert.deepEqual(heroic.params, heroicParams(DEFAULT_PARAMS));
+  assert.equal(heroic.assist.enabled, true);
+  assert.equal(heroic.params.gravity, HEROIC.gravity);
+  assert.equal(heroic.params.drag, HEROIC.drag);
+});
+
+// The bug this replaced: the lab kept one persistent copy, so opening it from
+// heroic showed real gravity beside thin heroic air, which is a world you were
+// never in and could not get back to.
+test('opening the lab from a mode loads that mode, not the last one', () => {
+  const lab = labDefaults();
+  const open = (from) => {
+    const settings = modeSettings(from);
+    Object.assign(lab.params, settings.params);
+    Object.assign(lab.assist, settings.assist);
+  };
+
+  open('heroic');
+  assert.equal(lab.params.gravity, HEROIC.gravity, 'the lab did not follow heroic gravity');
+  assert.equal(lab.assist.enabled, true);
+
+  open('real');
+  assert.equal(lab.params.gravity, DEFAULT_PARAMS.gravity, 'heroic gravity was left behind');
+  assert.equal(lab.assist.enabled, false);
+});
+
+// Assigned into rather than over, because the solver holds this exact object
+// while you are in lab mode. Replacing it would leave the solver on the old one
+// and every slider would stop doing anything.
+test('loading the lab keeps the object the solver is reading', () => {
+  const lab = labDefaults();
+  const params = lab.params;
+
+  Object.assign(lab.params, modeSettings('heroic').params);
+
+  assert.equal(lab.params, params, 'the lab was handed a new object');
+  assert.equal(params.gravity, HEROIC.gravity, 'the solver would still see the old world');
+});
+
+// Whatever a mode hands the lab has to be something the panel can show. A value
+// outside its own slider would be clamped to something else the moment you
+// touched it, which would silently change the world you had just opened.
+test('every mode lands inside the sliders that will show it', () => {
+  for (const mode of ['real', 'heroic']) {
+    const state = modeSettings(mode);
+
+    for (const tunable of sliders) {
+      const value = tunableValue(state, tunable);
+      assert.ok(
+        value >= tunable.min && value <= tunable.max,
+        `${mode} sets ${tunable.key} to ${value}, outside ${tunable.min}..${tunable.max}`,
+      );
+    }
+  }
 });

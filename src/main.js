@@ -108,21 +108,62 @@ let agent = null;
 // Heroic mode, because that is the only world it was trained in. Switching it on
 // anywhere else would be watching an agent fly a world it has never seen and
 // concluding something about it.
+//
+// Pressing A means one thing at every moment: if anything is loading or flying,
+// stop. Otherwise start.
+//
+// The guard is not paperwork. Fetching the weights is asynchronous, so a second
+// press that landed while the first was still loading used to find the pilot
+// still unset, start a second load, and end with both of them installing one.
+// Press A twice quickly and you were further into agent mode rather than out
+// of it, with no way back except pressing it an odd number of times.
+let loadingAgent = false;
+let cancelled = false;
+
 async function toggleAgent() {
   if (pilot) {
-    pilot = null;
+    releaseAgent();
+    return;
+  }
+  if (loadingAgent) {
+    cancelled = true;
     return;
   }
 
+  loadingAgent = true;
+  cancelled = false;
+
+  let loaded;
   try {
-    agent = agent || await loadAgent();
+    loaded = agent || await loadAgent();
   } catch (error) {
     console.warn('no trained agent to watch', error);
+    loadingAgent = false;
+    return;
+  }
+
+  loadingAgent = false;
+  agent = loaded;
+  if (cancelled) {
+    cancelled = false;
     return;
   }
 
   setMode('heroic');
   pilot = createPilot(agent, world, city, assistSettings());
+}
+
+// Giving the controls back, and letting go of the rope on the way out.
+//
+// Dropping the web matters more than it sounds. Without it you take over
+// halfway through somebody else's swing, still attached to a rooftop you did
+// not choose, and the flight carries on for a second or two exactly as it was.
+// Pressing A then appears to have done nothing, which is most of what made this
+// feel like it was not working.
+function releaseAgent() {
+  if (!pilot) return;
+  pilot = null;
+  releaseWeb(world);
 }
 
 const trail = [];
@@ -325,7 +366,7 @@ function frame(now) {
     stage.render();
   }
 
-  hud.update(world, frameTime, mode);
+  hud.update(world, frameTime, pilot ? 'agent' : mode);
   requestAnimationFrame(frame);
 }
 

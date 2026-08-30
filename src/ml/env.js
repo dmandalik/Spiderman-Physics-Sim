@@ -19,7 +19,14 @@
 // the trainer can be a search rather than a gradient method.
 
 import { createWorld, step, attachWeb, releaseWeb, reelWeb, DEFAULT_PARAMS } from '../physics/world.js';
-import { assistForce, assistReel, assistReach, HEROIC } from '../physics/assist.js';
+import {
+  assistForce,
+  assistReel,
+  assistReach,
+  gatherSlack,
+  heroicParams,
+  HEROIC,
+} from '../physics/assist.js';
 import { createCity, buildingsBetween, pickAnchor, NEAR_LAYER } from '../world/city.js';
 import { vec } from '../physics/vec.js';
 
@@ -55,12 +62,14 @@ const AIM = { low: -0.35, high: 1.25 }; // radians above the direction of travel
 const RANGE = { near: 0.35, far: 1 }; // as a fraction of how far he can fire
 
 export function createEnv({ seed = 1, params = {}, assist = HEROIC } = {}) {
-  const world = createWorld({ ...DEFAULT_PARAMS, drag: assist.drag, gravity: assist.gravity, ...params });
+  // The same world the game builds for heroic mode, read from the same place, so
+  // the agent cannot be trained in one set of physics and then flown in another.
+  const world = createWorld({ ...heroicParams(DEFAULT_PARAMS), ...params });
   const city = createCity(seed);
   const reach = assistReach(world.params, assist);
 
   // Everything the reward needs to remember between decisions.
-  const memory = { lastAim: 0, arcStart: 0, arcs: [], event: 0, grounded: false };
+  const memory = { lastAim: 0, arcStart: 0, arcs: [], event: 0, taut: 0, grounded: false };
 
   world.hero.pos = vec(0, 88);
   world.hero.vel = vec(26, 0);
@@ -79,7 +88,7 @@ export function wrapEnv(world, city, assist = HEROIC) {
     city,
     assist,
     reach: assistReach(world.params, assist),
-    memory: { lastAim: 0, arcStart: 0, arcs: [], event: 0, grounded: false },
+    memory: { lastAim: 0, arcStart: 0, arcs: [], event: 0, taut: 0, grounded: false },
   };
 }
 
@@ -189,6 +198,54 @@ export function aimPoint(env, aim, range) {
   };
 }
 
+// How a reel input becomes a rope rate, and the only definition of it.
+//
+// Working the web by hand replaces the assist rather than adding to it, so a
+// player pulling on the rope is never fighting the automatic slack gathering.
+// The trainer used to add the two instead, which meant the agent learned in a
+// world where holding the rope out still gathered slack in, and then played in
+// one where it does not. Two lines that were nearly the same and were not, which
+// is exactly the kind of difference that is invisible until the agent behaves
+// differently on screen than it did in training. One function now, and both
+// callers read it.
+export function resolveReel(world, assist, reel) {
+  // Paying out rope that is already loose is ignored. There is nothing to pay
+  // out against: the rope is not pulling, so letting more of it go does not do
+  // anything except keep the assist from gathering the slack back in.
+  //
+  // This is the structural half of the slack fix, and it belongs here rather
+  // than in the reward. Pricing loose rope instead was tried first and it
+  // collapsed the training run outright: a web fired ahead of you is legitimately
+  // slack until it catches, so a per metre charge taxed every shot at the moment
+  // of firing and the search concluded, correctly, that the cheapest policy was
+  // never to fire at all. Nought swings, fell on every city, and it got there in
+  // eleven seconds.
+  const paying = reel > 0 && slackIn(world) > assist.slack;
+  const hand = paying ? 0 : reel;
+
+  // With no assist he still takes up his own slack, because that is the rope
+  // rather than the assist. Without it real mode flies on a visibly drooping
+  // line and reads as elastic however rigid the solver is.
+  return hand || (assist.enabled === false ? gatherSlack(world, assist) : assistReel(world, assist));
+}
+
+// How much rope is hanging loose, in metres. Zero on a taut rope.
+//
+// This is the number the whole slack problem turns on. A slack rope applies no
+// force at all, so he is in free fall, and yet `assistForce` only asks whether a
+// web is attached before pushing him along at full thrust. Hanging off a loose
+// web is therefore free flight with the engine still running, which is strictly
+// better than letting go, and the first trained agent found it: it paid rope out
+// on all nine hundred of its decisions, never reeled in once, and rode a loose
+// rope forty six percent of the time. That is why it never let go, and why the
+// web on screen hung in a curve like a bungee.
+export function slackIn(world) {
+  const { hero, web } = world;
+  if (!web.attached) return 0;
+  const span = Math.hypot(hero.pos.x - web.anchor.x, hero.pos.y - web.anchor.y);
+  return Math.max(web.restLength - span, 0);
+}
+
 // What an action asks for, without doing any of it.
 //
 // Split out so the trainer and the live game read the same definition of what
@@ -223,25 +280,27 @@ export function stepEnv(env, action) {
 
   if (release) {
     releaseWeb(world);
-    const seconds = world.time - memory.arcStart;
+    // Measured in taut seconds rather than in seconds attached. An arc is the
+    // part where the rope is actually carrying him; the rest is a dangle.
+    const seconds = memory.taut - memory.arcStart;
     memory.arcs.push(seconds);
     memory.event += arcValue(seconds);
   } else if (fire) {
     const anchor = pickAnchor(city, world.hero.pos, target, env.reach, world.ground, world.hero.vel.x);
     if (anchor && attachWeb(world, anchor)) {
-      memory.arcStart = world.time;
+      memory.arcStart = memory.taut;
       memory.event -= REWARD.web;
     }
   }
 
   for (let i = 0; i < STEPS_PER_DECISION; i += 1) {
     world.applied = assistForce(world, assist);
-    // The agent's reel is added to the assist's own, so it can help or fight it
-    // but never has to fight the slack gathering that keeps the rope sane.
-    reelWeb(world, assistReel(world, assist) + reel, DT);
+    reelWeb(world, resolveReel(world, assist, reel), DT);
     step(world, DT);
 
     if (world.hero.pos.y - world.ground < 1) memory.grounded = true;
+    // Time on a taut rope is the only time that counts as swinging.
+    if (slackIn(world) <= assist.slack) memory.taut += DT;
   }
 
   const reward = score(env, aim);
@@ -340,6 +399,17 @@ export const REWARD = {
   // how many webs were bought to get it. Fewer, longer arcs, by construction.
   arcRate: 8, // per second of arc
   arcCap: 3.5, // seconds, past which more hanging earns nothing
+
+  // A small charge for rope left hanging loose, on top of the rule above that
+  // stops it being paid out in the first place.
+  //
+  // Small on purpose, and one and a half was far too much. A fresh web fired
+  // ahead is slack until it catches, so this is charged against every shot at
+  // the moment of firing, and at one and a half a metre it made firing at all a
+  // losing move. At a quarter it is a nudge toward keeping the rope working
+  // rather than a tax on using it.
+  slack: 0.25, // per metre of loose rope, per decision
+  slackCap: 3, // metres, past which more of it costs no more
 };
 
 // What one completed arc was worth. Capped rather than tapered off, because
@@ -358,6 +428,10 @@ function score(env, aim) {
 
   if (height >= REWARD.band[0] && height <= REWARD.band[1]) reward += REWARD.inBand;
   if (height < REWARD.lowBelow) reward -= REWARD.lowPenalty * (1 - height / REWARD.lowBelow);
+
+  // Loose rope, priced by the metre.
+  const loose = Math.max(slackIn(world) - env.assist.slack, 0);
+  if (loose > 0) reward -= REWARD.slack * Math.min(loose, REWARD.slackCap);
 
   if (world.web.attached && world.web.restLength < REWARD.shortRope) {
     reward -= REWARD.shortPenalty * (1 - world.web.restLength / REWARD.shortRope);
@@ -414,6 +488,10 @@ export function runEpisode(policy, { seed = 1, params, assist = HEROIC } = {}) {
     arcTime: mean,
     arcSpread: spread,
     holding: attachedSteps / decisions,
+    // The share of the episode the rope was actually carrying him. This is the
+    // honest version of `holding`: an agent can be attached for the whole run
+    // and swinging for none of it.
+    taut: env.memory.taut / Math.max(env.world.time, 1e-9),
     grounded: env.memory.grounded,
   };
 }

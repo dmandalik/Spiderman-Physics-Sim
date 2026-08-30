@@ -82,6 +82,17 @@ export const HEROIC = {
   save: 2.2,
 };
 
+// The world heroic mode runs in, as one object.
+//
+// It exists because it was written out twice, once in the game and once in the
+// trainer, and the two were not the same: the trainer left the time scale off
+// and worked the rope by a different rule. Two copies of a settings list is one
+// copy too many, and the agent flew differently on screen than it had in
+// training for exactly that reason.
+export function heroicParams(base) {
+  return { ...base, drag: HEROIC.drag, gravity: HEROIC.gravity, timeScale: HEROIC.timeScale };
+}
+
 // How far heroic mode lets him fire, so the swing starts on a rope short
 // enough to arc rather than sag.
 export function assistReach(params, settings = HEROIC) {
@@ -104,6 +115,26 @@ export function assistForce(world, settings = HEROIC) {
   return vec((hero.vel.x / speed) * accel * params.mass, (hero.vel.y / speed) * accel * params.mass);
 }
 
+// Taking up the slack, which is a property of holding a rope rather than a
+// favour the game does you.
+//
+// This is not an assist and it runs in every mode. A web is inextensible but it
+// is still a rope: it only ever pulls, so the moment he swings inside the circle
+// it goes loose and stays loose, and the renderer draws a loose rope hanging,
+// because it is. Attached perfectly taut and swinging normally, real mode grows
+// eleven metres of slack inside the first second and then flies on the end of a
+// visible droop, which is what a rigid rope is not supposed to look like.
+//
+// It costs nothing to fix. A slack rope carries no tension, so shortening it
+// does no work on him at all until the moment it comes tight, which is exactly
+// the moment this stops. Nobody swinging on a rope pays out slack and then waits
+// to fall onto it; they take it in, and now so does he.
+export function gatherSlack(world, settings = HEROIC) {
+  const { hero, web } = world;
+  if (!web.attached) return 0;
+  return web.restLength - distance(hero.pos, web.anchor) > settings.slack ? -settings.gather : 0;
+}
+
 // Working the web is now only for keeping him off the street, not for speed.
 // Returns a signed multiple of the reel rate: negative hauls in.
 export function assistReel(world, settings = HEROIC) {
@@ -111,9 +142,8 @@ export function assistReel(world, settings = HEROIC) {
   if (!web.attached) return 0;
 
   // Gather in any slack first. Everything else assumes a taut rope.
-  if (web.restLength - distance(hero.pos, web.anchor) > settings.slack) {
-    return -settings.gather;
-  }
+  const gathering = gatherSlack(world, settings);
+  if (gathering) return gathering;
 
   const height = hero.pos.y - world.ground;
   if (height >= settings.floor) return 0;
